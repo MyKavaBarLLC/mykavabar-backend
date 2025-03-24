@@ -1,0 +1,9 @@
+[default]
+port = 0
+
+[production]
+port = 443
+
+[production.tls]
+certs = "../tls/fullchain.pem"
+key = "../tls/privkey.pem"
