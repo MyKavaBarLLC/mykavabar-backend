@@ -1,7 +1,6 @@
 use crate::{
-	dbrecord::DBRecord,
 	error::{Error, ErrorResponse},
-	generic::{BearerToken, GenericOkResponse},
+	generic::{surrealdb_client, BearerToken, GenericOkResponse},
 	models::{
 		session::Session,
 		user::{Role, User},
@@ -15,6 +14,7 @@ use rocket::{
 	serde::{json::Json, Deserialize},
 };
 use serde_json::json;
+use surreal_socket::dbrecord::DBRecord;
 
 #[derive(Deserialize)]
 pub struct RegistrationRequest {
@@ -45,7 +45,7 @@ async fn get_user(id: &str, session: Session) -> Result<User, Error> {
 	if id == "me" {
 		session.user().await
 	} else {
-		match User::db_by_id(id).await? {
+		match User::db_by_id(&surrealdb_client().await?, id).await? {
 			Some(target_user) => {
 				let session_user = session.user().await?;
 
@@ -124,7 +124,12 @@ pub async fn update_user(
 		}
 	}
 
-	user.db_update_fields(updates).await?;
+	user.db_update_fields(
+		&surrealdb_client().await.map_err(Into::<Error>::into)?,
+		updates,
+	)
+	.await
+	.map_err(Into::<Error>::into)?;
 
 	Ok(Json(GenericOkResponse::new()))
 }
@@ -136,7 +141,11 @@ pub async fn delete_user(
 ) -> Result<Json<GenericOkResponse>, status::Custom<Json<ErrorResponse>>> {
 	let session = bearer_token.validate().await?;
 	let user = get_user(id, session).await?;
-	user.db_delete().await?;
+
+	user.db_delete(&surrealdb_client().await.map_err(Into::<Error>::into)?)
+		.await
+		.map_err(Into::<Error>::into)?;
+
 	Ok(Json(GenericOkResponse::new()))
 }
 
@@ -152,7 +161,9 @@ pub async fn get_users(
 		return Err(Error::insufficient_permissions().into());
 	}
 
-	let mut users = User::db_all().await?;
+	let mut users = User::db_all(&surrealdb_client().await.map_err(Into::<Error>::into)?)
+		.await
+		.map_err(Into::<Error>::into)?;
 
 	// Don't include password hashes in the response
 	for user in &mut users {

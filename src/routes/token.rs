@@ -1,6 +1,6 @@
 use crate::{
-	dbrecord::DBRecord,
 	error::{Error, ErrorResponse},
+	generic::surrealdb_client,
 	models::{
 		session::{Session, ACCESS_TOKEN_EXPIRY_SECONDS, REFRESH_TOKEN_EXPIRY_SECONDS},
 		user::User,
@@ -14,6 +14,7 @@ use rocket::{
 	serde::json::Json,
 };
 use serde::{Deserialize, Serialize};
+use surreal_socket::dbrecord::DBRecord;
 
 #[post(
 	"/v1/auth/token",
@@ -44,8 +45,11 @@ pub async fn token_json(
 pub async fn token(
 	token_request: TokenRequest,
 ) -> Result<Json<TokenResponse>, status::Custom<Json<ErrorResponse>>> {
-	let user = User::db_search_one("username", token_request.username.clone())
-		.await?
+	let client = surrealdb_client().await.map_err(Into::<Error>::into)?;
+
+	let user = User::db_search_one(&client, "username", token_request.username.clone())
+		.await
+		.map_err(Into::<Error>::into)?
 		.ok_or(Error::generic_401())?;
 
 	let mut session = match token_request.grant_type.as_str() {
@@ -58,7 +62,12 @@ pub async fn token(
 
 			user.verify_password(&password)?;
 			let session = Session::new(&user.uuid())?;
-			session.db_create().await?;
+
+			session
+				.db_create(&client)
+				.await
+				.map_err(Into::<Error>::into)?;
+
 			session
 		}
 		"refresh_token" => {

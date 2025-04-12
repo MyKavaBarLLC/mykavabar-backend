@@ -1,8 +1,6 @@
+use crate::generic::surrealdb_client;
 use crate::{
-	dbrecord::DBRecord,
-	error::Error,
-	generic::{Expirable, HashedString, UUID},
-	models::session::Session,
+	error::Error, generic::HashedString, models::session::Session,
 	routes::users::RegistrationRequest,
 };
 use async_trait::async_trait;
@@ -10,6 +8,8 @@ use chrono::{DateTime, Utc};
 use rocket::http::Status;
 use serde::{Deserialize, Serialize};
 use strum::{EnumIter, IntoEnumIterator};
+use surreal_socket::dbrecord::SsUuid;
+use surreal_socket::dbrecord::{DBRecord, Expirable};
 
 const NAME_MIN_LENGTH: usize = 2;
 const NAME_MAX_LENGTH: usize = 32;
@@ -17,7 +17,7 @@ const PASSWORD_MIN_LENGTH: usize = 8;
 
 #[derive(Serialize, Deserialize)]
 pub struct User {
-	pub uuid: UUID<User>,
+	pub uuid: SsUuid<User>,
 	pub username: String,
 	pub display_name: String,
 	pub password_hash: HashedString,
@@ -29,7 +29,7 @@ pub struct User {
 impl Default for User {
 	fn default() -> Self {
 		Self {
-			uuid: UUID::new(),
+			uuid: SsUuid::new(),
 			username: "".to_owned(),
 			display_name: "".to_owned(),
 			password_hash: Default::default(),
@@ -58,7 +58,7 @@ impl DBRecord for User {
 		"users"
 	}
 
-	fn uuid(&self) -> UUID<Self> {
+	fn uuid(&self) -> SsUuid<Self> {
 		self.uuid.to_owned()
 	}
 
@@ -76,7 +76,7 @@ impl User {
 	pub async fn register(registration_request: &RegistrationRequest) -> Result<Self, Error> {
 		let username = Self::validate_username_requirements(&registration_request.username)?;
 
-		if User::db_search_one("username", username.clone())
+		if User::db_search_one(&surrealdb_client().await?, "username", username.clone())
 			.await?
 			.is_some()
 		{
@@ -90,7 +90,7 @@ impl User {
 		Self::verify_password_requirements(&registration_request.password)?;
 
 		let user = Self {
-			uuid: UUID::new(),
+			uuid: SsUuid::new(),
 			username,
 			display_name: Self::validate_displayname_requirements(
 				&registration_request.display_name,
@@ -101,7 +101,7 @@ impl User {
 			..Default::default()
 		};
 
-		user.db_create().await?;
+		user.db_create(&surrealdb_client().await?).await?;
 
 		Ok(user)
 	}
@@ -122,14 +122,15 @@ impl User {
 		&self,
 		refresh_token: &str,
 	) -> Result<Option<Session>, Error> {
-		let sessions: Vec<Session> = Session::db_search("user", self.uuid.clone()).await?;
+		let sessions: Vec<Session> =
+			Session::db_search(&surrealdb_client().await?, "user", self.uuid.clone()).await?;
 
 		for session in sessions {
 			if session.refresh_token_hash.verify(refresh_token)? {
 				if !session.is_expired()? {
 					return Ok(Some(session));
 				} else {
-					session.db_delete().await?;
+					session.db_delete(&surrealdb_client().await?).await?;
 					continue;
 				}
 			}
@@ -197,8 +198,12 @@ impl User {
 		Self::verify_password_requirements(password)?;
 		self.password_hash = HashedString::new(password)?;
 
-		self.db_update_field("password_hash", &self.password_hash)
-			.await?;
+		self.db_update_field(
+			&surrealdb_client().await?,
+			"password_hash",
+			&self.password_hash,
+		)
+		.await?;
 
 		Ok(())
 	}

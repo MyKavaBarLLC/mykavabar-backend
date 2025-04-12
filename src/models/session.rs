@@ -1,12 +1,12 @@
 use crate::{
-	dbrecord::DBRecord,
 	error::Error,
-	generic::{Environment, Expirable, HashedString, JwtClaims, UUID},
+	generic::{surrealdb_client, Environment, HashedString, JwtClaims},
 	models::user::User,
 };
 use chrono::{DateTime, Utc};
 use rocket::http::Status;
 use serde::{Deserialize, Serialize};
+use surreal_socket::dbrecord::{DBRecord, Expirable, SsUuid};
 use surrealdb::sql::Uuid;
 
 pub const ACCESS_TOKEN_EXPIRY_SECONDS: u64 = 60 * 60; // 1 hour
@@ -14,10 +14,10 @@ pub const REFRESH_TOKEN_EXPIRY_SECONDS: u64 = 60 * 60 * 24 * 30; // 30 days
 
 #[derive(Serialize, Deserialize)]
 pub struct Session {
-	pub uuid: UUID<Session>,
+	pub uuid: SsUuid<Session>,
 	created_at: DateTime<Utc>,
 	updated_at: DateTime<Utc>,
-	user: UUID<User>,
+	user: SsUuid<User>,
 	pub refresh_token_hash: HashedString,
 	pub refresh_token_issued_at: DateTime<Utc>,
 }
@@ -27,16 +27,16 @@ impl DBRecord for Session {
 		"sessions"
 	}
 
-	fn uuid(&self) -> UUID<Self> {
+	fn uuid(&self) -> SsUuid<Self> {
 		self.uuid.to_owned()
 	}
 }
 
 impl Session {
 	/// Create a new Session, without persisting it to the database.
-	pub fn new(user: &UUID<User>) -> Result<Self, Error> {
+	pub fn new(user: &SsUuid<User>) -> Result<Self, Error> {
 		Ok(Self {
-			uuid: UUID::new(),
+			uuid: SsUuid::new(),
 			created_at: Utc::now(),
 			updated_at: Utc::now(),
 			user: user.to_owned(),
@@ -52,15 +52,15 @@ impl Session {
 		let decoding_key = jsonwebtoken::DecodingKey::from_secret(secret.as_ref());
 
 		let mut validation = jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::HS256);
-		validation.set_audience(&["kavacoast.com-session"]);
-		validation.set_issuer(&["kavacoast.com"]);
+		validation.set_audience(&[format!("{}-session", env.domain.val())]);
+		validation.set_issuer(&[env.domain.val()]);
 
 		let token_data =
 			jsonwebtoken::decode::<JwtClaims>(access_token, &decoding_key, &validation)
 				.map_err(|_| Error::generic_401())?;
 		// note: decode() also checks expiration
 
-		let session: Session = Self::db_by_id(&token_data.claims.sub)
+		let session: Session = Self::db_by_id(&surrealdb_client().await?, &token_data.claims.sub)
 			.await?
 			.ok_or(Error::generic_401())?;
 
@@ -74,16 +74,19 @@ impl Session {
 		self.refresh_token_hash = HashedString::new(&refresh_token)?;
 		self.refresh_token_issued_at = Utc::now();
 
-		self.db_update_fields(vec![
-			(
-				"refresh_token_hash",
-				&serde_json::to_value(&self.refresh_token_hash)?,
-			),
-			(
-				"refresh_token_issued_at",
-				&serde_json::to_value(self.refresh_token_issued_at)?,
-			),
-		])
+		self.db_update_fields(
+			&surrealdb_client().await?,
+			vec![
+				(
+					"refresh_token_hash",
+					&serde_json::to_value(&self.refresh_token_hash)?,
+				),
+				(
+					"refresh_token_issued_at",
+					&serde_json::to_value(self.refresh_token_issued_at)?,
+				),
+			],
+		)
 		.await?;
 
 		Ok(refresh_token)
@@ -96,13 +99,14 @@ impl Session {
 	pub fn generate_access_token(&self) -> Result<String, Error> {
 		let now = chrono::Utc::now().timestamp() as u64;
 		let env = Environment::new();
+		let domain = env.domain.val();
 
 		let claims = JwtClaims {
 			sub: self.uuid.uuid_string(),
 			exp: now + ACCESS_TOKEN_EXPIRY_SECONDS,
 			iat: now,
-			iss: "kavacoast.com".to_owned(),
-			aud: "kavacoast.com-session".to_owned(),
+			iss: domain.to_owned(),
+			aud: format!("{}-session", domain),
 		};
 
 		let secret = env.oauth_jwt_secret.val();
@@ -118,9 +122,16 @@ impl Session {
 
 	pub async fn user(&self) -> Result<User, Error> {
 		self.user
-			.object_opt()
+			.object_opt(&surrealdb_client().await?)
 			.await?
 			.ok_or_else(|| Error::new(Status::Unauthorized, "Session user not found", None))
+	}
+
+	/// Wrapper for `clear_expired` with internal client,
+	/// needed for use in `jobs.rs` (can't pass args to job fns).
+	pub async fn clear_expired_sessions() -> Result<(), Error> {
+		Self::clear_expired(&surrealdb_client().await?).await?;
+		Ok(())
 	}
 }
 

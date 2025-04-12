@@ -1,5 +1,6 @@
 use rocket::http::Status;
 use serde::{Deserialize, Serialize};
+use surreal_socket::error::SurrealSocketError;
 
 #[derive(Debug)]
 pub struct Error {
@@ -123,14 +124,14 @@ impl std::fmt::Display for Error {
 	}
 }
 
-impl From<surrealdb::Error> for Error {
-	fn from(e: surrealdb::Error) -> Self {
-		Error::generic_500(&format!("SurrealDB Operation error: {}", e))
-	}
-}
-
 impl From<serde_json::error::Error> for Error {
 	fn from(e: serde_json::error::Error) -> Self {
 		Error::generic_500(&format!("serde_json error: {:?}", e))
+	}
+}
+
+impl From<SurrealSocketError> for Error {
+	fn from(e: SurrealSocketError) -> Self {
+		Error::generic_500(&format!("SurrealSocket error: {:?}", e))
 	}
 }

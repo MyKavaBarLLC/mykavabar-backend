@@ -1,4 +1,4 @@
-use crate::{error::Error, generic::Expirable, models::session::Session};
+use crate::{error::Error, models::session::Session};
 use std::{
 	future::Future,
 	pin::Pin,
@@ -15,7 +15,7 @@ pub struct Job {
 impl Job {
 	fn active_jobs() -> Vec<Job> {
 		vec![Job::new(
-			Session::clear_expired,
+			Session::clear_expired_sessions,
 			60 * 60 * 24 * 7, // 1 week
 		)]
 	}
