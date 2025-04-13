@@ -1,12 +1,17 @@
 use crate::routes;
 use rocket::{
+	fairing::{Fairing, Info, Kind},
 	fs::{relative, NamedFile},
 	serde::json::Json,
 	shield::{Hsts, Shield},
 	time::Duration,
+	Orbit, Rocket,
 };
 use serde::Serialize;
-use std::path::{Path, PathBuf};
+use std::{
+	path::{Path, PathBuf},
+	sync::{Arc, Mutex},
+};
 
 #[rocket::get("/<path..>")]
 pub async fn static_pages(path: PathBuf) -> Option<NamedFile> {
@@ -29,7 +34,7 @@ pub fn version() -> Json<VersionInfo> {
 	})
 }
 
-pub async fn start_web() {
+pub async fn start_web(bound_port: BoundPort) {
 	if let Err(e) = rocket::build()
 		.mount(
 			"/",
@@ -48,9 +53,36 @@ pub async fn start_web() {
 			],
 		)
 		.attach(Shield::default().enable(Hsts::IncludeSubDomains(Duration::new(31536000, 0))))
+		.manage(bound_port)
+		.attach(PortCapture)
 		.launch()
 		.await
 	{
 		log::error!("Error starting web server: {}", e);
+	}
+}
+
+#[derive(Debug, Clone)]
+pub struct BoundPort(pub Arc<Mutex<Option<u16>>>);
+
+struct PortCapture;
+
+#[rocket::async_trait]
+impl Fairing for PortCapture {
+	fn info(&self) -> Info {
+		Info {
+			name: "Capture bound port",
+			kind: Kind::Liftoff,
+		}
+	}
+
+	async fn on_liftoff(&self, rocket: &Rocket<Orbit>) {
+		let port = rocket.config().port;
+
+		let state = rocket
+			.state::<BoundPort>()
+			.expect("BoundPort state not managed");
+
+		*state.0.lock().unwrap() = Some(port);
 	}
 }
