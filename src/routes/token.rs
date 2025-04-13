@@ -15,6 +15,7 @@ use rocket::{
 };
 use serde::{Deserialize, Serialize};
 use surreal_socket::dbrecord::DBRecord;
+use utoipa::ToSchema;
 
 #[post(
 	"/v1/auth/token",
@@ -30,6 +31,21 @@ pub async fn token_form(
 	token(token_request.into_inner()).await
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/auth/token",
+	description = "OAuth2 token",
+    request_body(
+        content = TokenRequest,
+        content_type = "application/json"
+    ),
+    responses(
+        (status = 200, description = "Token granted", body = TokenResponse),
+        (status = 400, description = "Bad request", body = ErrorResponse),
+        (status = 401, description = "Unauthorized", body = ErrorResponse)
+    ),
+    tag = "auth"
+)]
 #[post(
 	"/v1/auth/token",
 	data = "<token_request>",
@@ -88,7 +104,7 @@ pub async fn token(
 	Ok(Json(response))
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 /// [Successful Response](https://datatracker.ietf.org/doc/html/rfc6749#section-5.1)
 pub struct TokenResponse {
 	/// Used for Bearer authentication by including it in the Authorization header as Bearer <access_token>.
@@ -128,7 +144,7 @@ impl Default for TokenResponse {
 	}
 }
 
-#[derive(Debug, FromForm, Serialize, Deserialize)]
+#[derive(Debug, FromForm, Serialize, Deserialize, ToSchema)]
 /// [Access Token Request](https://datatracker.ietf.org/doc/html/rfc6749#section-4.3.2)
 pub struct TokenRequest {
 	/// "password" or "refresh_token"

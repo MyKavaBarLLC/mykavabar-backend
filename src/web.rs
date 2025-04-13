@@ -50,6 +50,8 @@ pub async fn start_web(bound_port: BoundPort) {
 				routes::users::get_users,
 				routes::users::update_user,
 				routes::users::delete_user,
+				routes::openapi::openapi_route,
+				routes::openapi::rapidoc,
 			],
 		)
 		.attach(Shield::default().enable(Hsts::IncludeSubDomains(Duration::new(31536000, 0))))

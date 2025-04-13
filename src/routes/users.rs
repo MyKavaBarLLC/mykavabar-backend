@@ -15,14 +15,26 @@ use rocket::{
 };
 use serde_json::json;
 use surreal_socket::dbrecord::DBRecord;
+use utoipa::ToSchema;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct RegistrationRequest {
 	pub username: String,
 	pub display_name: String,
 	pub password: String,
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/register_user",
+	description = "Register user",
+    request_body(content = RegistrationRequest, content_type = "application/json"),
+    responses(
+        (status = 200, description = "User registered and token granted", body = TokenResponse),
+        (status = 400, description = "Bad request", body = ErrorResponse)
+    ),
+    tag = "auth"
+)]
 #[rocket::post("/v1/register_user", format = "json", data = "<registration>")]
 pub async fn register(
 	registration: Json<RegistrationRequest>,
@@ -60,12 +72,30 @@ async fn get_user(id: &str, session: Session) -> Result<User, Error> {
 	}
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct ChangePasswordRequest {
 	pub old_password: String,
 	pub new_password: String,
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/users/{id}/change_password",
+	description = "Change password",
+    request_body(content = ChangePasswordRequest, content_type = "application/json"),
+    params(
+        ("id" = String, Path, description = "User ID")
+    ),
+    responses(
+        (status = 200, description = "Password changed", body = GenericOkResponse),
+        (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 403, description = "Forbidden", body = ErrorResponse)
+    ),
+    security(
+        ("bearerAuth" = [])
+    ),
+    tag = "user"
+)]
 #[rocket::post("/v1/users/<id>/change_password", format = "json", data = "<request>")]
 pub async fn change_password(
 	id: String,
@@ -83,7 +113,7 @@ pub async fn change_password(
 	Ok(Json(GenericOkResponse::new()))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct UpdateUserRequest {
 	pub username: Option<String>,
 	pub display_name: Option<String>,
@@ -94,6 +124,25 @@ pub struct UpdateUserRequest {
 	pub password: Option<String>,
 }
 
+#[utoipa::path(
+    patch,
+    path = "/v1/users/{id}",
+	description = "Update user",
+    request_body(content = UpdateUserRequest, content_type = "application/json"),
+    params(
+        ("id" = String, Path, description = "User ID")
+    ),
+    responses(
+        (status = 200, description = "User updated", body = GenericOkResponse),
+        (status = 400, description = "Bad request", body = ErrorResponse),
+        (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 403, description = "Forbidden", body = ErrorResponse)
+    ),
+    security(
+        ("bearerAuth" = [])
+    ),
+    tag = "user"
+)]
 #[rocket::patch("/v1/users/<id>", format = "json", data = "<request>")]
 pub async fn update_user(
 	id: &str,
@@ -134,6 +183,23 @@ pub async fn update_user(
 	Ok(Json(GenericOkResponse::new()))
 }
 
+#[utoipa::path(
+    delete,
+    path = "/v1/users/{id}",
+    description = "Delete user",
+    params(
+        ("id" = String, Path, description = "User ID")
+    ),
+    responses(
+        (status = 200, description = "User deleted", body = GenericOkResponse),
+        (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 403, description = "Forbidden", body = ErrorResponse)
+    ),
+    security(
+        ("bearerAuth" = [])
+    ),
+    tag = "user"
+)]
 #[rocket::delete("/v1/users/<id>")]
 pub async fn delete_user(
 	id: &str,
@@ -149,6 +215,7 @@ pub async fn delete_user(
 	Ok(Json(GenericOkResponse::new()))
 }
 
+// TODO: Create response struct for this & add utoipa docs
 /// Get every user in the database. Admins only.
 #[rocket::get("/v1/users")]
 pub async fn get_users(

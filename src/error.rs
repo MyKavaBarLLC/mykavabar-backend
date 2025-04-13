@@ -1,6 +1,7 @@
 use rocket::http::Status;
 use serde::{Deserialize, Serialize};
 use surreal_socket::error::SurrealSocketError;
+use utoipa::ToSchema;
 
 #[derive(Debug)]
 pub struct Error {
@@ -44,9 +45,9 @@ impl Error {
 		Self::new(Status::Unauthorized, "Invalid credentials", None)
 	}
 
-	/// Create a 401 (Unauthorized) error with an "Insufficient permissions" message.
+	/// Create a 403 (Forbidden) error with an "Insufficient permissions" message.
 	pub fn insufficient_permissions() -> Self {
-		Self::new(Status::Unauthorized, "Insufficient permissions", None)
+		Self::new(Status::Forbidden, "Insufficient permissions", None)
 	}
 
 	/// Create a 404 (Not Found) error with a message specific to a user not being found.
@@ -76,7 +77,7 @@ impl Error {
 	}
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, ToSchema)]
 pub struct ErrorResponse {
 	/// Error description for the client
 	error: String,

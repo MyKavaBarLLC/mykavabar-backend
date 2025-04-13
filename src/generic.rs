@@ -10,6 +10,7 @@ use rocket::{
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use surrealdb::{engine::remote::ws::Ws, opt::auth::Root, Surreal};
+use utoipa::ToSchema;
 
 pub async fn surrealdb_client() -> Result<Surreal<surrealdb::engine::remote::ws::Client>, String> {
 	let env = Environment::new();
@@ -135,7 +136,7 @@ impl HashedString {
 	}
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct GenericOkResponse {
 	success: bool,
 }
