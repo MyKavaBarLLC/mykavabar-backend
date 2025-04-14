@@ -32,6 +32,8 @@ async fn main() {
 	jobs::Job::spawn_all();
 
 	let bound_bort = BoundPort(Arc::new(Mutex::new(None)));
+
+	#[cfg(debug_assertions)]
 	let bound_bort_clone = bound_bort.clone();
 
 	#[cfg(debug_assertions)]
