@@ -15,8 +15,6 @@ pub const REFRESH_TOKEN_EXPIRY_SECONDS: u64 = 60 * 60 * 24 * 30; // 30 days
 #[derive(Serialize, Deserialize)]
 pub struct Session {
 	pub uuid: SsUuid<Session>,
-	created_at: DateTime<Utc>,
-	updated_at: DateTime<Utc>,
 	user: SsUuid<User>,
 	pub refresh_token_hash: HashedString,
 	pub refresh_token_issued_at: DateTime<Utc>,
@@ -37,8 +35,6 @@ impl Session {
 	pub fn new(user: &SsUuid<User>) -> Result<Self, Error> {
 		Ok(Self {
 			uuid: SsUuid::new(),
-			created_at: Utc::now(),
-			updated_at: Utc::now(),
 			user: user.to_owned(),
 			refresh_token_hash: HashedString::new(&Uuid::new_v4().to_string())?,
 			refresh_token_issued_at: Utc::now(),

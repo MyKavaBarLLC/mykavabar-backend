@@ -1,10 +1,8 @@
+use crate::routes::openapi::HandleDummy;
 use crate::{
-	error::{Error, ErrorResponse},
-	generic::{surrealdb_client, BearerToken, GenericOkResponse},
-	models::{
-		session::Session,
-		user::{Role, User},
-	},
+	error::Error,
+	generic::{surrealdb_client, BearerToken, DisplayName, GenericResponse, UniqueHandle},
+	models::{session::Session, user::User},
 	routes::token::{token, TokenRequest, TokenResponse},
 };
 use core::str;
@@ -13,9 +11,32 @@ use rocket::{
 	response::status,
 	serde::{json::Json, Deserialize},
 };
+use serde::Serialize;
 use serde_json::json;
 use surreal_socket::dbrecord::DBRecord;
 use utoipa::ToSchema;
+
+#[derive(Serialize, ToSchema)]
+pub struct UserResponse {
+	#[schema(example = "5b460bd6-d991-40f1-8067-6e9bbd35224a")]
+	pub uuid: String,
+	/// Unique, mutable handle used in URLs. Must be lowercase, alphanumeric, and may include underscores.
+	#[schema(example = "jasonk")]
+	pub username: String,
+	/// Non-unique display name. Can include spaces and special characters.
+	#[schema(example = "Jason")]
+	pub display_name: String,
+}
+
+impl From<User> for UserResponse {
+	fn from(user: User) -> Self {
+		Self {
+			uuid: user.uuid.uuid_string(),
+			username: user.username.to_string(),
+			display_name: user.display_name.to_string(),
+		}
+	}
+}
 
 #[derive(Deserialize, ToSchema)]
 pub struct RegistrationRequest {
@@ -31,19 +52,20 @@ pub struct RegistrationRequest {
     request_body(content = RegistrationRequest, content_type = "application/json"),
     responses(
         (status = 200, description = "User registered and token granted", body = TokenResponse),
-        (status = 400, description = "Bad request", body = ErrorResponse)
+        (status = 400, description = "Bad request", body = GenericResponse)
     ),
     tag = "auth"
 )]
 #[rocket::post("/v1/register_user", format = "json", data = "<registration>")]
 pub async fn register(
 	registration: Json<RegistrationRequest>,
-) -> Result<Json<TokenResponse>, status::Custom<Json<ErrorResponse>>> {
+) -> Result<Json<TokenResponse>, status::Custom<Json<GenericResponse>>> {
 	let registration = registration.into_inner();
 	let user = User::register(&registration).await?;
 
 	// Log them in
-	let token_request = TokenRequest::new_password_grant(&user.username, &registration.password);
+	let token_request =
+		TokenRequest::new_password_grant(&user.username.to_string(), &registration.password);
 
 	token(token_request).await
 }
@@ -61,7 +83,7 @@ async fn get_user(id: &str, session: Session) -> Result<User, Error> {
 			Some(target_user) => {
 				let session_user = session.user().await?;
 
-				if target_user.uuid != session_user.uuid() && !session_user.has_role(&Role::Admin) {
+				if target_user.uuid != session_user.uuid() && !session_user.is_admin {
 					return Err(Error::insufficient_permissions());
 				}
 
@@ -87,9 +109,9 @@ pub struct ChangePasswordRequest {
         ("id" = String, Path, description = "User ID")
     ),
     responses(
-        (status = 200, description = "Password changed", body = GenericOkResponse),
-        (status = 401, description = "Unauthorized", body = ErrorResponse),
-        (status = 403, description = "Forbidden", body = ErrorResponse)
+        (status = 200, description = "Password changed", body = GenericResponse),
+        (status = 401, description = "Unauthorized", body = GenericResponse),
+        (status = 403, description = "Forbidden", body = GenericResponse)
     ),
     security(
         ("bearerAuth" = [])
@@ -101,7 +123,7 @@ pub async fn change_password(
 	id: String,
 	request: Json<ChangePasswordRequest>,
 	bearer_token: BearerToken,
-) -> Result<Json<GenericOkResponse>, status::Custom<Json<ErrorResponse>>> {
+) -> Result<Json<GenericResponse>, status::Custom<Json<GenericResponse>>> {
 	let session = bearer_token.validate().await?;
 	let mut user = get_user(&id, session).await?;
 
@@ -110,13 +132,13 @@ pub async fn change_password(
 	}
 
 	user.set_password(&request.new_password).await?;
-	Ok(Json(GenericOkResponse::new()))
+	Ok(Json(GenericResponse::success()))
 }
 
 #[derive(Deserialize, ToSchema)]
-pub struct UpdateUserRequest {
-	pub username: Option<String>,
-	pub display_name: Option<String>,
+pub struct UserRequest {
+	pub username: Option<UniqueHandle<HandleDummy>>,
+	pub display_name: Option<DisplayName>,
 
 	/// Only admins can change the password of a user with this endpoint.
 	/// Users can change their own password by using the change_password endpoint.
@@ -128,15 +150,15 @@ pub struct UpdateUserRequest {
     patch,
     path = "/v1/users/{id}",
 	description = "Update user",
-    request_body(content = UpdateUserRequest, content_type = "application/json"),
+    request_body(content = UserRequest, content_type = "application/json"),
     params(
         ("id" = String, Path, description = "User ID")
     ),
     responses(
-        (status = 200, description = "User updated", body = GenericOkResponse),
-        (status = 400, description = "Bad request", body = ErrorResponse),
-        (status = 401, description = "Unauthorized", body = ErrorResponse),
-        (status = 403, description = "Forbidden", body = ErrorResponse)
+        (status = 200, description = "User updated", body = GenericResponse),
+        (status = 400, description = "Bad request", body = GenericResponse),
+        (status = 401, description = "Unauthorized", body = GenericResponse),
+        (status = 403, description = "Forbidden", body = GenericResponse)
     ),
     security(
         ("bearerAuth" = [])
@@ -146,26 +168,27 @@ pub struct UpdateUserRequest {
 #[rocket::patch("/v1/users/<id>", format = "json", data = "<request>")]
 pub async fn update_user(
 	id: &str,
-	request: Json<UpdateUserRequest>,
+	request: Json<UserRequest>,
 	bearer_token: BearerToken,
-) -> Result<Json<GenericOkResponse>, status::Custom<Json<ErrorResponse>>> {
+) -> Result<Json<UserResponse>, status::Custom<Json<GenericResponse>>> {
 	let session = bearer_token.validate().await?;
-	let is_admin_request = session.user().await?.has_role(&Role::Admin);
 	let mut user = get_user(id, session).await?;
 	let mut updates = vec![];
 
 	if let Some(username) = &request.username {
-		let username = User::validate_username_requirements(username)?;
-		updates.push(("username", json!(username)));
+		let handle = UniqueHandle::<User>::new(&username.to_string()).await?;
+		updates.push(("username", json!(handle)));
+		user.username = handle.to_owned();
 	}
 
 	if let Some(display_name) = &request.display_name {
-		let display_name = User::validate_displayname_requirements(display_name)?;
+		display_name.validate()?;
 		updates.push(("display_name", json!(display_name)));
+		user.display_name = display_name.to_owned();
 	}
 
 	if let Some(password) = &request.password {
-		if is_admin_request {
+		if user.is_admin {
 			user.set_password(password).await?;
 		} else {
 			// Users change their own password with the change_password endpoint
@@ -180,7 +203,7 @@ pub async fn update_user(
 	.await
 	.map_err(Into::<Error>::into)?;
 
-	Ok(Json(GenericOkResponse::new()))
+	Ok(Json(user.into()))
 }
 
 #[utoipa::path(
@@ -191,9 +214,9 @@ pub async fn update_user(
         ("id" = String, Path, description = "User ID")
     ),
     responses(
-        (status = 200, description = "User deleted", body = GenericOkResponse),
-        (status = 401, description = "Unauthorized", body = ErrorResponse),
-        (status = 403, description = "Forbidden", body = ErrorResponse)
+        (status = 200, description = "User deleted", body = GenericResponse),
+        (status = 401, description = "Unauthorized", body = GenericResponse),
+        (status = 403, description = "Forbidden", body = GenericResponse)
     ),
     security(
         ("bearerAuth" = [])
@@ -204,7 +227,7 @@ pub async fn update_user(
 pub async fn delete_user(
 	id: &str,
 	bearer_token: BearerToken,
-) -> Result<Json<GenericOkResponse>, status::Custom<Json<ErrorResponse>>> {
+) -> Result<Json<GenericResponse>, status::Custom<Json<GenericResponse>>> {
 	let session = bearer_token.validate().await?;
 	let user = get_user(id, session).await?;
 
@@ -212,30 +235,41 @@ pub async fn delete_user(
 		.await
 		.map_err(Into::<Error>::into)?;
 
-	Ok(Json(GenericOkResponse::new()))
+	Ok(Json(GenericResponse::success()))
 }
 
-// TODO: Create response struct for this & add utoipa docs
-/// Get every user in the database. Admins only.
+/// Get all users
+#[utoipa::path(
+    get,
+    path = "/v1/users",
+    description = "Get all Users. Only available to admins.",
+    responses(
+        (status = 200, description = "List of users", body = [UserResponse]),
+        (status = 401, description = "Unauthorized", body = GenericResponse),
+        (status = 403, description = "Forbidden", body = GenericResponse)
+    ),
+    security(
+        ("bearerAuth" = [])
+    ),
+    tag = "user"
+)]
 #[rocket::get("/v1/users")]
 pub async fn get_users(
 	bearer_token: BearerToken,
-) -> Result<Json<Vec<User>>, status::Custom<Json<ErrorResponse>>> {
+) -> Result<Json<Vec<UserResponse>>, status::Custom<Json<GenericResponse>>> {
 	let session = bearer_token.validate().await?;
 	let user = session.user().await?;
 
-	if !user.has_role(&Role::Admin) {
+	if !user.is_admin {
 		return Err(Error::insufficient_permissions().into());
 	}
 
-	let mut users = User::db_all(&surrealdb_client().await.map_err(Into::<Error>::into)?)
+	let users = User::db_all(&surrealdb_client().await.map_err(Into::<Error>::into)?)
 		.await
-		.map_err(Into::<Error>::into)?;
-
-	// Don't include password hashes in the response
-	for user in &mut users {
-		user.password_hash = Default::default();
-	}
+		.map_err(Into::<Error>::into)?
+		.iter()
+		.map(|user| UserResponse::from(user.to_owned()))
+		.collect();
 
 	Ok(Json(users))
 }

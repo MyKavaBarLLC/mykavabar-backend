@@ -1,17 +1,15 @@
 use rocket::http::Status;
-use serde::{Deserialize, Serialize};
 use surreal_socket::error::SurrealSocketError;
-use utoipa::ToSchema;
 
 #[derive(Debug)]
 pub struct Error {
-	status: Status,
+	pub status: Status,
 	/// Error description for the client
-	public_desc: String,
+	pub public_desc: String,
 	/// Error description for internal logging.
 	///
 	/// If none, nothing will be logged.
-	internal_desc: Option<String>,
+	pub internal_desc: Option<String>,
 }
 
 impl Error {
@@ -68,44 +66,6 @@ impl Error {
 	pub fn unprocessable(client_msg: &str) -> Self {
 		Self::new(Status::UnprocessableEntity, client_msg, None)
 	}
-
-	/// Create an `ErrorResponse` from this `Error`.
-	pub fn as_errorresponse(&self) -> ErrorResponse {
-		ErrorResponse {
-			error: self.public_desc.to_owned(),
-		}
-	}
-}
-
-#[derive(Serialize, Deserialize, ToSchema)]
-pub struct ErrorResponse {
-	/// Error description for the client
-	error: String,
-}
-
-impl From<Error> for ErrorResponse {
-	fn from(e: Error) -> Self {
-		e.as_errorresponse()
-	}
-}
-
-impl From<Error> for rocket::response::status::Custom<rocket::serde::json::Json<ErrorResponse>> {
-	/// Converts an `Error` into a `status::Custom<Json<ErrorResponse>>`.
-	///
-	/// Logs the internal description of the error if it exists, and returns a response
-	/// with the public description and the given status.
-	fn from(e: Error) -> Self {
-		if let Some(internal_desc) = e.internal_desc {
-			log::error!("{}", internal_desc);
-		}
-
-		rocket::response::status::Custom(
-			e.status,
-			rocket::serde::json::Json(ErrorResponse {
-				error: e.public_desc,
-			}),
-		)
-	}
 }
 
 impl From<String> for Error {
@@ -134,5 +94,12 @@ impl From<serde_json::error::Error> for Error {
 impl From<SurrealSocketError> for Error {
 	fn from(e: SurrealSocketError) -> Self {
 		Error::generic_500(&format!("SurrealSocket error: {:?}", e))
+	}
+}
+
+impl From<surrealdb::Error> for Error {
+	fn from(err: surrealdb::Error) -> Self {
+		let sse: SurrealSocketError = err.into();
+		sse.into()
 	}
 }

@@ -6,7 +6,6 @@ mod generic;
 mod jobs;
 mod models;
 mod routes;
-mod test_init;
 mod web;
 
 #[cfg(debug_assertions)]
@@ -20,14 +19,13 @@ async fn main() {
 		.filter_module("serenity", log::LevelFilter::Warn)
 		.init();
 
-	generic::Environment::load_path("config.toml");
-	let args: Vec<String> = std::env::args().collect();
+	let cwd = std::env::current_dir().expect("Failed to get current directory");
 
-	if args.contains(&"test".to_string()) {
-		crate::test_init::test_init().await;
-		return;
+	if !cwd.join("Cargo.toml").exists() {
+		panic!("Invalid working directory");
 	}
 
+	generic::Environment::load_path("config.toml");
 	log::info!("Starting...");
 	jobs::Job::spawn_all();
 

@@ -1,54 +1,41 @@
-use crate::generic::surrealdb_client;
+use crate::generic::{surrealdb_client, DisplayName, HasHandle, UniqueHandle};
 use crate::{
 	error::Error, generic::HashedString, models::session::Session,
 	routes::users::RegistrationRequest,
 };
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
 use rocket::http::Status;
 use serde::{Deserialize, Serialize};
-use strum::{EnumIter, IntoEnumIterator};
 use surreal_socket::dbrecord::SsUuid;
 use surreal_socket::dbrecord::{DBRecord, Expirable};
+use surreal_socket::error::SurrealSocketError;
 
-const NAME_MIN_LENGTH: usize = 2;
-const NAME_MAX_LENGTH: usize = 32;
 const PASSWORD_MIN_LENGTH: usize = 8;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct User {
 	pub uuid: SsUuid<User>,
-	pub username: String,
-	pub display_name: String,
+	pub username: UniqueHandle<User>,
+	pub display_name: DisplayName,
 	pub password_hash: HashedString,
-	pub roles: Vec<Role>,
-	pub created_at: DateTime<Utc>,
-	pub updated_at: DateTime<Utc>,
+	pub is_admin: bool,
+}
+
+impl HasHandle for User {
+	fn handle_field() -> &'static str {
+		"username"
+	}
 }
 
 impl Default for User {
 	fn default() -> Self {
 		Self {
 			uuid: SsUuid::new(),
-			username: "".to_owned(),
-			display_name: "".to_owned(),
+			username: UniqueHandle::default(),
+			display_name: DisplayName::default(),
 			password_hash: Default::default(),
-			roles: vec![],
-			created_at: Utc::now(),
-			updated_at: Utc::now(),
+			is_admin: false,
 		}
-	}
-}
-
-#[derive(Serialize, Deserialize, PartialEq, EnumIter)]
-#[serde(rename_all = "snake_case")]
-pub enum Role {
-	Admin,
-}
-
-impl Role {
-	pub fn all() -> Vec<Self> {
-		Role::iter().collect()
 	}
 }
 
@@ -65,6 +52,17 @@ impl DBRecord for User {
 	fn use_trash() -> bool {
 		true
 	}
+
+	async fn pre_delete_hook(&self) -> Result<(), SurrealSocketError> {
+		let client = surrealdb_client().await?;
+		let sessions = Session::db_search(&client, "user", self.uuid.clone()).await?;
+
+		for session in sessions {
+			session.db_delete(&client).await?;
+		}
+
+		Ok(())
+	}
 }
 
 impl User {
@@ -74,7 +72,7 @@ impl User {
 	///
 	/// Default values are specified here.
 	pub async fn register(registration_request: &RegistrationRequest) -> Result<Self, Error> {
-		let username = Self::validate_username_requirements(&registration_request.username)?;
+		let username = UniqueHandle::new(&registration_request.username).await?;
 
 		if User::db_search_one(&surrealdb_client().await?, "username", username.clone())
 			.await?
@@ -92,22 +90,14 @@ impl User {
 		let user = Self {
 			uuid: SsUuid::new(),
 			username,
-			display_name: Self::validate_displayname_requirements(
-				&registration_request.display_name,
-			)?,
+			display_name: DisplayName::new(&registration_request.display_name)?,
 			password_hash: HashedString::new(&registration_request.password)?,
-			created_at: Utc::now(),
-			updated_at: Utc::now(),
 			..Default::default()
 		};
 
 		user.db_create(&surrealdb_client().await?).await?;
 
 		Ok(user)
-	}
-
-	pub fn has_role(&self, role: &Role) -> bool {
-		self.roles.contains(role)
 	}
 
 	pub fn verify_password(&self, password: &str) -> Result<(), Error> {
@@ -137,45 +127,6 @@ impl User {
 		}
 
 		Ok(None)
-	}
-
-	pub fn validate_username_requirements(username: &str) -> Result<String, Error> {
-		Self::validate_name_length(username)?;
-
-		if !username.chars().all(|c| c.is_alphanumeric() || c == '_') {
-			return Err(Error::new(
-				Status::BadRequest,
-				"Username must contain only alphanumeric characters and underscores.",
-				None,
-			));
-		}
-
-		Ok(username.to_lowercase())
-	}
-
-	pub fn validate_displayname_requirements(displayname: &str) -> Result<String, Error> {
-		Self::validate_name_length(displayname)?;
-		Ok(displayname.trim().to_owned())
-	}
-
-	fn validate_name_length(name: &str) -> Result<(), Error> {
-		if name.len() < NAME_MIN_LENGTH {
-			return Err(Error::new(
-				Status::BadRequest,
-				&format!("Name must be at least {} characters long.", NAME_MIN_LENGTH),
-				None,
-			));
-		}
-
-		if name.len() > NAME_MAX_LENGTH {
-			return Err(Error::new(
-				Status::BadRequest,
-				&format!("Name must be at most {} characters long.", NAME_MAX_LENGTH),
-				None,
-			));
-		}
-
-		Ok(())
 	}
 
 	fn verify_password_requirements(password: &str) -> Result<(), Error> {

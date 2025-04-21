@@ -7,10 +7,15 @@ use rocket::{
 	http::{HeaderMap, Status},
 	request::{FromRequest, Outcome},
 };
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::{collections::HashMap, fmt::Display, marker::PhantomData};
+use surreal_socket::dbrecord::DBRecord;
 use surrealdb::{engine::remote::ws::Ws, opt::auth::Root, Surreal};
 use utoipa::ToSchema;
+
+// Establishment & User names
+const NAME_MIN_LENGTH: usize = 2;
+const NAME_MAX_LENGTH: usize = 32;
 
 pub async fn surrealdb_client() -> Result<Surreal<surrealdb::engine::remote::ws::Client>, String> {
 	let env = Environment::new();
@@ -136,23 +141,6 @@ impl HashedString {
 	}
 }
 
-#[derive(Serialize, ToSchema)]
-pub struct GenericOkResponse {
-	success: bool,
-}
-
-impl GenericOkResponse {
-	pub fn new() -> Self {
-		Self { success: true }
-	}
-}
-
-impl Default for GenericOkResponse {
-	fn default() -> Self {
-		Self::new()
-	}
-}
-
 pub struct BearerToken(Option<String>);
 
 impl BearerToken {
@@ -200,4 +188,218 @@ pub struct JwtClaims {
 	pub iss: String,
 	/// Audience
 	pub aud: String,
+}
+
+#[derive(Serialize, Deserialize, ToSchema)]
+pub struct GenericResponse {
+	success: bool,
+	/// Error description for the client
+	error: String,
+}
+
+impl GenericResponse {
+	pub fn success() -> Self {
+		GenericResponse {
+			success: true,
+			error: String::new(),
+		}
+	}
+}
+
+impl From<Error> for GenericResponse {
+	fn from(e: Error) -> Self {
+		GenericResponse {
+			success: false,
+			error: e.public_desc.to_owned(),
+		}
+	}
+}
+
+impl From<Error> for rocket::response::status::Custom<rocket::serde::json::Json<GenericResponse>> {
+	/// Converts an `Error` into a `status::Custom<Json<ErrorResponse>>`.
+	///
+	/// Logs the internal description of the error if it exists, and returns a response
+	/// with the public description and the given status.
+	fn from(e: Error) -> Self {
+		if let Some(internal_desc) = e.internal_desc {
+			log::error!("{}", internal_desc);
+		}
+
+		rocket::response::status::Custom(
+			e.status,
+			rocket::serde::json::Json(GenericResponse {
+				success: false,
+				error: e.public_desc,
+			}),
+		)
+	}
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default, ToSchema)]
+pub struct DisplayName(String);
+
+#[derive(Debug, Clone, Default, ToSchema)]
+pub struct UniqueHandle<T>(String, PhantomData<T>);
+
+impl DisplayName {
+	pub fn new(name: &str) -> Result<Self, Error> {
+		let display_name = Self(name.trim().to_owned());
+		display_name.validate()?;
+		Ok(display_name)
+	}
+
+	pub fn validate(&self) -> Result<(), Error> {
+		if self.0.len() < NAME_MIN_LENGTH {
+			return Err(Error::new(
+				Status::BadRequest,
+				&format!(
+					"DisplayName must be at least {} characters long.",
+					NAME_MIN_LENGTH
+				),
+				None,
+			));
+		}
+
+		if self.0.len() > NAME_MAX_LENGTH {
+			return Err(Error::new(
+				Status::BadRequest,
+				&format!(
+					"DisplayName must be at most {} characters long.",
+					NAME_MAX_LENGTH
+				),
+				None,
+			));
+		}
+
+		if self.0 != self.0.trim() {
+			return Err(Error::new(
+				Status::BadRequest,
+				"DisplayName must not contain leading or trailing whitespace.",
+				None,
+			));
+		}
+
+		Ok(())
+	}
+}
+
+impl<T> UniqueHandle<T>
+where
+	T: DBRecord + HasHandle,
+{
+	/// Create a new handle, ensuring requirements are met.
+	/// Use `new_unchecked()` to skip validation.
+	pub async fn new(name: &str) -> Result<Self, Error> {
+		let handle = Self(name.trim().to_owned(), PhantomData);
+		handle.validate().await?;
+		Ok(handle)
+	}
+
+	pub async fn validate(&self) -> Result<(), Error> {
+		DisplayName::new(&self.0)?; // Use DisplayName requirements + the following
+
+		if self.0 != self.0.to_lowercase() {
+			return Err(Error::new(
+				Status::BadRequest,
+				"Handle must be lowercase.",
+				None,
+			));
+		}
+
+		if !self.0.chars().all(|c| c.is_alphanumeric() || c == '_') {
+			return Err(Error::new(
+				Status::BadRequest,
+				"Handle must contain only alphanumeric characters and underscores.",
+				None,
+			));
+		}
+
+		if T::reserved_handles().contains(&self.0.as_str()) {
+			return Err(Error::new(
+				Status::BadRequest,
+				&format!("Handle `{}` is reserved.", self.0),
+				None,
+			));
+		}
+
+		let client = surrealdb_client().await?;
+
+		let field = T::handle_field();
+		let existing = T::db_search(&client, field, self.0.to_owned()).await?;
+
+		if !existing.is_empty() {
+			return Err(Error::new(
+				Status::BadRequest,
+				&format!("Handle `{}` already exists.", self.0),
+				None,
+			));
+		}
+
+		Ok(())
+	}
+
+	/// Use `new()` to validate
+	pub fn new_unchecked(name: String) -> Self {
+		Self(name, PhantomData)
+	}
+}
+
+impl Display for DisplayName {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(f, "{}", self.0)
+	}
+}
+
+impl<T> Display for UniqueHandle<T> {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(f, "{}", self.0)
+	}
+}
+
+pub trait HasHandle: DBRecord {
+	fn handle_field() -> &'static str;
+	fn reserved_handles() -> &'static [&'static str] {
+		&[]
+	}
+}
+
+impl<T: DBRecord> Serialize for UniqueHandle<T> {
+	fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+	where
+		S: Serializer,
+	{
+		serializer.serialize_str(&self.to_string())
+	}
+}
+
+impl<'de, T> Deserialize<'de> for UniqueHandle<T>
+where
+	T: DBRecord + HasHandle,
+{
+	fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+	where
+		D: Deserializer<'de>,
+	{
+		struct HandleVisitor<T>(PhantomData<T>);
+
+		impl<T> serde::de::Visitor<'_> for HandleVisitor<T>
+		where
+			T: DBRecord + HasHandle,
+		{
+			type Value = UniqueHandle<T>;
+
+			fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+				formatter.write_str("a string")
+			}
+
+			fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+			where
+				E: serde::de::Error,
+			{
+				Ok(UniqueHandle::<T>::new_unchecked(value.to_owned()))
+			}
+		}
+
+		deserializer.deserialize_string(HandleVisitor(PhantomData))
+	}
 }

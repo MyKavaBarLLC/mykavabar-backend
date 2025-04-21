@@ -1,6 +1,6 @@
 use crate::{
-	error::{Error, ErrorResponse},
-	generic::surrealdb_client,
+	error::Error,
+	generic::{surrealdb_client, GenericResponse},
 	models::{
 		session::{Session, ACCESS_TOKEN_EXPIRY_SECONDS, REFRESH_TOKEN_EXPIRY_SECONDS},
 		user::User,
@@ -27,7 +27,7 @@ use utoipa::ToSchema;
 /// [OAuth2 Token Endpoint](https://datatracker.ietf.org/doc/html/rfc6749#section-3.2)
 pub async fn token_form(
 	token_request: Form<TokenRequest>,
-) -> Result<Json<TokenResponse>, status::Custom<Json<ErrorResponse>>> {
+) -> Result<Json<TokenResponse>, status::Custom<Json<GenericResponse>>> {
 	token(token_request.into_inner()).await
 }
 
@@ -41,8 +41,8 @@ pub async fn token_form(
     ),
     responses(
         (status = 200, description = "Token granted", body = TokenResponse),
-        (status = 400, description = "Bad request", body = ErrorResponse),
-        (status = 401, description = "Unauthorized", body = ErrorResponse)
+        (status = 400, description = "Bad request", body = GenericResponse),
+        (status = 401, description = "Unauthorized", body = GenericResponse)
     ),
     tag = "auth"
 )]
@@ -53,14 +53,14 @@ pub async fn token_form(
 )]
 pub async fn token_json(
 	token_request: Json<TokenRequest>,
-) -> Result<Json<TokenResponse>, status::Custom<Json<ErrorResponse>>> {
+) -> Result<Json<TokenResponse>, status::Custom<Json<GenericResponse>>> {
 	token(token_request.into_inner()).await
 }
 
 /// Requests from both json and form content types for /auth/token are handled by this function
 pub async fn token(
 	token_request: TokenRequest,
-) -> Result<Json<TokenResponse>, status::Custom<Json<ErrorResponse>>> {
+) -> Result<Json<TokenResponse>, status::Custom<Json<GenericResponse>>> {
 	let client = surrealdb_client().await.map_err(Into::<Error>::into)?;
 
 	let user = User::db_search_one(&client, "username", token_request.username.clone())

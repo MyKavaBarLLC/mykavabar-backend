@@ -1,11 +1,14 @@
-use crate::routes;
+use crate::{error::Error, generic::GenericResponse, routes};
 use rocket::{
+	catch, catchers,
 	fairing::{Fairing, Info, Kind},
 	fs::{relative, NamedFile},
+	get,
+	response::Redirect,
 	serde::json::Json,
 	shield::{Hsts, Shield},
 	time::Duration,
-	Orbit, Rocket,
+	uri, Orbit, Request, Rocket,
 };
 use serde::Serialize;
 use std::{
@@ -39,21 +42,30 @@ pub async fn start_web(bound_port: BoundPort) {
 		.mount(
 			"/",
 			rocket::routes![
+				root_redirect,
 				static_pages,
 				version,
+				routes::openapi::openapi_route,
+				routes::openapi::rapidoc,
+				// Auth
 				routes::token::token_json,
 				routes::token::token_form,
 				routes::check_token::check_token,
+				// Users
 				routes::users::register,
-				routes::pages::admin::admin,
 				routes::users::change_password,
 				routes::users::get_users,
 				routes::users::update_user,
 				routes::users::delete_user,
-				routes::openapi::openapi_route,
-				routes::openapi::rapidoc,
+				routes::bootstrap_admin::bootstrap_admin_route,
+				// Establishments
+				routes::establishment::create_establishment,
+				routes::establishment::get_establishment,
+				routes::establishment::search_establishments_route,
+				routes::establishment::update_establishment,
 			],
 		)
+		.register("/", catchers![internal_error, not_found])
 		.attach(Shield::default().enable(Hsts::IncludeSubDomains(Duration::new(31536000, 0))))
 		.manage(bound_port)
 		.attach(PortCapture)
@@ -87,4 +99,21 @@ impl Fairing for PortCapture {
 
 		*state.0.lock().unwrap() = Some(port);
 	}
+}
+
+#[get("/")]
+fn root_redirect() -> Redirect {
+	Redirect::to(uri!("/v1/rapidoc"))
+}
+
+#[catch(500)]
+fn internal_error(_req: &Request<'_>) -> Json<GenericResponse> {
+	let response: GenericResponse = Error::generic_500("Unhandled application panic").into();
+	Json(response)
+}
+
+#[catch(404)]
+fn not_found(_req: &Request<'_>) -> Json<GenericResponse> {
+	let response: GenericResponse = Error::not_found("This endpoint does not exist").into();
+	Json(response)
 }
