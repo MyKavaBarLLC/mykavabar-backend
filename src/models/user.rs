@@ -4,7 +4,6 @@ use crate::{
 	routes::users::RegistrationRequest,
 };
 use async_trait::async_trait;
-use rocket::http::Status;
 use serde::{Deserialize, Serialize};
 use surreal_socket::dbrecord::SsUuid;
 use surreal_socket::dbrecord::{DBRecord, Expirable};
@@ -72,17 +71,14 @@ impl User {
 	///
 	/// Default values are specified here.
 	pub async fn register(registration_request: &RegistrationRequest) -> Result<Self, Error> {
-		let username = UniqueHandle::new(&registration_request.username).await?;
+		registration_request.display_name.validate()?;
+		let username = UniqueHandle::new(&registration_request.username.to_string()).await?;
 
 		if User::db_search_one(&surrealdb_client().await?, "username", username.clone())
 			.await?
 			.is_some()
 		{
-			return Err(Error::new(
-				Status::BadRequest,
-				"Username unavailable.",
-				None,
-			));
+			return Err(Error::bad_request("Username is taken."));
 		};
 
 		Self::verify_password_requirements(&registration_request.password)?;
@@ -90,7 +86,7 @@ impl User {
 		let user = Self {
 			uuid: SsUuid::new(),
 			username,
-			display_name: DisplayName::new(&registration_request.display_name)?,
+			display_name: registration_request.display_name.clone(),
 			password_hash: HashedString::new(&registration_request.password)?,
 			..Default::default()
 		};
@@ -131,14 +127,10 @@ impl User {
 
 	fn verify_password_requirements(password: &str) -> Result<(), Error> {
 		if password.len() < PASSWORD_MIN_LENGTH {
-			return Err(Error::new(
-				Status::BadRequest,
-				&format!(
-					"Password must be at least {} characters long.",
-					PASSWORD_MIN_LENGTH
-				),
-				None,
-			));
+			return Err(Error::bad_request(&format!(
+				"Password must be at least {} characters long.",
+				PASSWORD_MIN_LENGTH
+			)));
 		}
 
 		Ok(())

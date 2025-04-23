@@ -1,5 +1,6 @@
 use crate::generic::BearerToken;
 use crate::generic::GenericResponse;
+use crate::routes::openapi::DummySuccess;
 use rocket::{get, http::Status, response::status, serde::json::Json};
 
 #[utoipa::path(
@@ -7,7 +8,7 @@ use rocket::{get, http::Status, response::status, serde::json::Json};
     path = "/v1/auth/check_token",
     description = "Check whether the provided Bearer token is valid",
     responses(
-        (status = 200, description = "Token valid", body = [GenericResponse]),
+        (status = 200, description = "Token valid", body = DummySuccess),
         (status = 401, description = "Unauthorized", body = GenericResponse),
     ),
     security(

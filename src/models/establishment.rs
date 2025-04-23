@@ -2,9 +2,9 @@ use crate::generic::{DisplayName, HasHandle, UniqueHandle};
 use crate::models::staff::Staff;
 use crate::routes::establishment::EstablishmentRequest;
 use crate::{error::Error, generic::surrealdb_client};
+use rocket::async_trait;
 use rocket::serde::Deserialize;
 use rocket::serde::Serialize;
-use rocket::{async_trait, http::Status};
 use std::fmt::{Display, Formatter};
 use surreal_socket::{
 	dbrecord::{DBRecord, SsUuid},
@@ -97,15 +97,13 @@ impl Establishment {
 	pub async fn try_from_request(request: EstablishmentRequest) -> Result<Self, Error> {
 		let establishment = Self {
 			uuid: SsUuid::<Establishment>::new(),
-			display_name: request.display_name.ok_or(Error::new(
-				Status::BadRequest,
-				"Display name is required",
-				None,
-			))?,
+			display_name: request
+				.display_name
+				.ok_or(Error::bad_request("Display name is required"))?,
 			handle: if let Some(handle) = request.handle {
 				UniqueHandle::new(&handle.to_string()).await?
 			} else {
-				return Err(Error::new(Status::BadRequest, "Handle is required", None));
+				return Err(Error::bad_request("Handle is required"));
 			},
 			schedule: request.schedule.unwrap_or_default(),
 			coordinate: request.coordinate.unwrap_or_default(),
@@ -116,6 +114,7 @@ impl Establishment {
 	}
 }
 
+/// A schedule. Periods must be chronological and non-overlapping
 #[derive(Serialize, Deserialize, ToSchema, Default, Clone)]
 pub struct Schedule {
 	pub sun: Vec<TimePeriod>,
@@ -140,10 +139,8 @@ impl Schedule {
 				period.validate()?;
 
 				if period.begin < minute {
-					return Err(Error::new(
-						Status::BadRequest,
+					return Err(Error::bad_request(
 						"Time periods must be in ascending order and non-overlapping",
-						None,
 					));
 				}
 
@@ -155,10 +152,14 @@ impl Schedule {
 	}
 }
 
+/// A time period in minutes since midnight.
 #[derive(Serialize, Deserialize, ToSchema, Default, Clone)]
-/// A time period in minutes since midnight. The end value can be over 1440 if the period extends until after midnight.
 pub struct TimePeriod {
+	/// 0 to 1439. Must be less than `end`.
+	#[schema(maximum = 1439)]
 	begin: u16,
+	/// Can be over 1440 if the period extends until after midnight.
+	#[schema(maximum = 2879)]
 	end: u16,
 }
 
@@ -171,7 +172,7 @@ impl TimePeriod {
 
 	pub fn validate(&self) -> Result<(), Error> {
 		if self.begin >= MINUTES_IN_DAY || self.end >= MINUTES_IN_DAY * 2 || self.begin > self.end {
-			return Err(Error::new(Status::BadRequest, "Invalid time period", None));
+			return Err(Error::bad_request("Invalid time period"));
 		}
 
 		Ok(())
@@ -181,7 +182,11 @@ impl TimePeriod {
 /// Geographic coordinate
 #[derive(Serialize, Deserialize, ToSchema, Default, Clone)]
 pub struct Coordinate {
+	/// Longitude in decimal degrees, negative for west
+	#[schema(maximum = 180.0, minimum = -180.0, example = -80.1434)]
 	pub lng: f64,
+	/// Latitude in decimal degrees, negative for south
+	#[schema(maximum = 90.0, minimum = -90.0, example = 26.1223)]
 	pub lat: f64,
 }
 
@@ -200,11 +205,7 @@ impl Coordinate {
 
 	pub fn validate(&self) -> Result<(), Error> {
 		if self.lat < -90.0 || self.lat > 90.0 || self.lng < -180.0 || self.lng > 180.0 {
-			return Err(Error::new(
-				Status::BadRequest,
-				"Coordinate out of bounds",
-				None,
-			));
+			return Err(Error::bad_request("Coordinate out of bounds"));
 		}
 
 		Ok(())
@@ -215,7 +216,7 @@ impl Coordinate {
 ///
 /// A rating of 0 is considered unrated. 1-99 is invalid.
 #[derive(Serialize, Deserialize, ToSchema, Default, Clone)]
-pub struct Rating(u16); // 0 to 500 inclusive, where 345 = 3.45
+pub struct Rating(u16);
 
 impl Rating {
 	pub fn new(rating: u16) -> Result<Self, Error> {
@@ -227,7 +228,7 @@ impl Rating {
 	pub fn validate(&self) -> Result<(), Error> {
 		// Allow 0 (unrated) and 100-500
 		if (1..100).contains(&self.0) || self.0 > 500 {
-			return Err(Error::new(Status::BadRequest, "Rating out of bounds", None));
+			return Err(Error::bad_request("Rating out of bounds"));
 		}
 
 		Ok(())

@@ -36,7 +36,7 @@ use utoipa_rapidoc::RapiDoc;
 #[derive(OpenApi)]
 #[openapi(
 	paths(token_json, register, change_password, update_user, delete_user, get_users, bootstrap_admin_route, check_token, get_establishment, create_establishment, search_establishments_route, update_establishment),
-	components(schemas(DisplayName, UniqueHandle<HandleDummy>, TokenRequest, TokenResponse, GenericResponse, RegistrationRequest, ChangePasswordRequest, UserRequest, UserResponse, BootstrapAdminRequest, EstablishmentSearchRequest, EstablishmentCard, EstablishmentRequest)),
+	components(schemas(DisplayName, UniqueHandle<HandleDummy>, TokenRequest, TokenResponse, GenericResponse, RegistrationRequest, ChangePasswordRequest, UserRequest, UserResponse, BootstrapAdminRequest, EstablishmentSearchRequest, EstablishmentCard, EstablishmentRequest, DummySuccess)),
 	tags((name = "auth", description = "OAuth 2.0 Authentication"),
 		(name = "user", description = "User management endpoints. Use `me` in place of user ID to refer to the authenticated user"),
 		(name = "establishment", description = "Establishment management endpoints")
@@ -93,4 +93,14 @@ impl HasHandle for HandleDummy {
 	fn handle_field() -> &'static str {
 		unimplemented!()
 	}
+}
+
+// Use as the doc component for successful responses because
+// GenericResponse uses false as the example `success` value
+#[derive(Serialize, Deserialize, ToSchema)]
+pub struct DummySuccess {
+	#[schema(example = true)]
+	success: bool,
+	#[schema(example = json!(null))]
+	error: Option<String>,
 }

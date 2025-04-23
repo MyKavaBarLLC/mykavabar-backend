@@ -66,6 +66,11 @@ impl Error {
 	pub fn unprocessable(client_msg: &str) -> Self {
 		Self::new(Status::UnprocessableEntity, client_msg, None)
 	}
+
+	/// Create a 400 (Bad Request) error with a specified message for the client.
+	pub fn bad_request(client_msg: &str) -> Self {
+		Self::new(Status::BadRequest, client_msg, None)
+	}
 }
 
 impl From<String> for Error {

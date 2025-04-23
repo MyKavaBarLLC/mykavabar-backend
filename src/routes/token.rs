@@ -8,7 +8,6 @@ use crate::{
 };
 use rocket::{
 	form::{Form, FromForm},
-	http::Status,
 	post,
 	response::status,
 	serde::json::Json,
@@ -17,14 +16,14 @@ use serde::{Deserialize, Serialize};
 use surreal_socket::dbrecord::DBRecord;
 use utoipa::ToSchema;
 
+/// Request tokens
+///
+/// [OAuth2 Token Endpoint](https://datatracker.ietf.org/doc/html/rfc6749#section-3.2)
 #[post(
 	"/v1/auth/token",
 	data = "<token_request>",
 	format = "application/x-www-form-urlencoded"
 )]
-/// Request tokens
-///
-/// [OAuth2 Token Endpoint](https://datatracker.ietf.org/doc/html/rfc6749#section-3.2)
 pub async fn token_form(
 	token_request: Form<TokenRequest>,
 ) -> Result<Json<TokenResponse>, status::Custom<Json<GenericResponse>>> {
@@ -70,11 +69,9 @@ pub async fn token(
 
 	let mut session = match token_request.grant_type.as_str() {
 		"password" => {
-			let password = token_request.password.ok_or(Error::new(
-				Status::BadRequest,
-				"Missing password",
-				None,
-			))?;
+			let password = token_request
+				.password
+				.ok_or(Error::bad_request("Missing password"))?;
 
 			user.verify_password(&password)?;
 			let session = Session::new(&user.uuid())?;
@@ -87,25 +84,23 @@ pub async fn token(
 			session
 		}
 		"refresh_token" => {
-			let refresh_token = token_request.refresh_token.ok_or(Error::new(
-				Status::BadRequest,
-				"Missing refresh token",
-				None,
-			))?;
+			let refresh_token = token_request
+				.refresh_token
+				.ok_or(Error::bad_request("Missing refresh token"))?;
 
 			user.get_session_from_refresh_token(&refresh_token)
 				.await?
 				.ok_or(Error::generic_401())?
 		}
-		_ => return Err(Error::new(Status::BadRequest, "Invalid grant type", None).into()),
+		_ => return Err(Error::bad_request("Invalid grant type").into()),
 	};
 
 	let response = TokenResponse::generate(&mut session).await?;
 	Ok(Json(response))
 }
 
-#[derive(Serialize, ToSchema)]
 /// [Successful Response](https://datatracker.ietf.org/doc/html/rfc6749#section-5.1)
+#[derive(Serialize, ToSchema)]
 pub struct TokenResponse {
 	/// Used for Bearer authentication by including it in the Authorization header as Bearer <access_token>.
 	access_token: String,
@@ -144,8 +139,8 @@ impl Default for TokenResponse {
 	}
 }
 
-#[derive(Debug, FromForm, Serialize, Deserialize, ToSchema)]
 /// [Access Token Request](https://datatracker.ietf.org/doc/html/rfc6749#section-4.3.2)
+#[derive(Debug, FromForm, Serialize, Deserialize, ToSchema)]
 pub struct TokenRequest {
 	/// "password" or "refresh_token"
 	grant_type: String,

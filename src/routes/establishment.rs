@@ -19,10 +19,13 @@ use strum::AsRefStr;
 use surreal_socket::dbrecord::DBRecord;
 use utoipa::ToSchema;
 
+/// Establishment Card - Minimal establishment info for search results
 #[derive(Serialize, ToSchema)]
 pub struct EstablishmentCard {
 	uuid: String,
 	display_name: DisplayName,
+	/// Unique, mutable handle used in URLs. Must be lowercase, alphanumeric, and may include underscores.
+	#[schema(value_type = String)]
 	handle: UniqueHandle<HandleDummy>,
 	rating: Rating,
 }
@@ -38,18 +41,24 @@ impl From<Establishment> for EstablishmentCard {
 	}
 }
 
+/// Establishment Request
 #[derive(Deserialize, ToSchema)]
 pub struct EstablishmentRequest {
 	pub display_name: Option<DisplayName>,
+	/// Unique, mutable handle used in URLs. Must be lowercase, alphanumeric, and may include underscores.
+	#[schema(value_type = String)]
 	pub handle: Option<UniqueHandle<HandleDummy>>,
 	pub schedule: Option<Schedule>,
 	pub coordinate: Option<Coordinate>,
 	pub rating: Option<Rating>,
 }
 
+/// Establishment Response
 #[derive(Serialize, ToSchema)]
 pub struct EstablishmentResponse {
 	pub display_name: DisplayName,
+	/// Unique, mutable handle used in URLs. Must be lowercase, alphanumeric, and may include underscores.
+	#[schema(value_type = String)]
 	pub handle: UniqueHandle<HandleDummy>,
 	pub schedule: Schedule,
 	pub coordinate: Coordinate,
@@ -75,7 +84,7 @@ impl From<Establishment> for EstablishmentResponse {
     description = "Create an Establishment. Admins only.",
 	request_body(content = EstablishmentRequest, content_type = "application/json"),
     responses(
-        (status = 200, description = "Fetched establishment", body = [EstablishmentResponse]),
+        (status = 200, description = "Fetched establishment", body = EstablishmentResponse),
         (status = 401, description = "Unauthorized", body = GenericResponse),
         (status = 403, description = "Forbidden", body = GenericResponse)
     ),
@@ -115,7 +124,7 @@ pub async fn create_establishment(
         ("id_or_handle" = String, Path, description = "Establishment ID or handle")
     ),
     responses(
-        (status = 200, description = "Establishment fetched", body = [EstablishmentResponse]),
+        (status = 200, description = "Establishment fetched", body = EstablishmentResponse),
         (status = 401, description = "Unauthorized", body = GenericResponse),
         (status = 403, description = "Forbidden", body = GenericResponse)
     ),
@@ -272,6 +281,10 @@ async fn search_establishments(
 			search.sort_by.as_ref()
 		)
 	} else {
+		if search.sort_by == SortField::Distance {
+			return Err(Error::bad_request("Distance sort requires a location"));
+		}
+
 		format!(
 			"SELECT * FROM {} ORDER BY {} DESC LIMIT 10;",
 			Establishment::table(),
@@ -283,20 +296,23 @@ async fn search_establishments(
 	Ok(establishments)
 }
 
+/// Establishment Search Request
 #[derive(Deserialize, ToSchema)]
 pub struct EstablishmentSearchRequest {
-	// Optional location in format "[latitude, longitude]", e.g. "[12.345, -67.8901]"
 	pub location: Option<Coordinate>,
 
 	/// In kilometers. Only applicable if location is provided. Defaults to 1000.
+	#[schema(example = 300)]
 	pub radius: Option<f32>,
+
 	pub sort_by: SortField,
 
 	/// Search by name. If set, all other filters are ignored.
+	#[schema(example = json!(null))]
 	pub name: Option<String>,
 }
 
-#[derive(Deserialize, Serialize, ToSchema, AsRefStr)]
+#[derive(Deserialize, Serialize, ToSchema, AsRefStr, PartialEq)]
 #[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]
 pub enum SortField {

@@ -192,52 +192,56 @@ pub struct JwtClaims {
 
 #[derive(Serialize, Deserialize, ToSchema)]
 pub struct GenericResponse {
+	/// Success status. If true, `error` is null.
 	success: bool,
-	/// Error description for the client
-	error: String,
+	/// Error description when `success` is false.
+	#[schema(example = "Error description")]
+	error: Option<String>,
 }
 
 impl GenericResponse {
 	pub fn success() -> Self {
 		GenericResponse {
 			success: true,
-			error: String::new(),
+			error: None,
 		}
 	}
-}
 
-impl From<Error> for GenericResponse {
-	fn from(e: Error) -> Self {
+	pub fn error(message: &str) -> Self {
 		GenericResponse {
 			success: false,
-			error: e.public_desc.to_owned(),
+			error: Some(message.to_owned()),
 		}
 	}
 }
 
-impl From<Error> for rocket::response::status::Custom<rocket::serde::json::Json<GenericResponse>> {
-	/// Converts an `Error` into a `status::Custom<Json<ErrorResponse>>`.
-	///
-	/// Logs the internal description of the error if it exists, and returns a response
-	/// with the public description and the given status.
+/// Converts an `Error` into a `GenericResponse` with the public description.
+///
+/// Logs the internal description if set
+impl From<Error> for GenericResponse {
 	fn from(e: Error) -> Self {
 		if let Some(internal_desc) = e.internal_desc {
 			log::error!("{}", internal_desc);
 		}
 
-		rocket::response::status::Custom(
-			e.status,
-			rocket::serde::json::Json(GenericResponse {
-				success: false,
-				error: e.public_desc,
-			}),
-		)
+		GenericResponse {
+			success: false,
+			error: Some(e.public_desc.to_owned()),
+		}
 	}
 }
 
+impl From<Error> for rocket::response::status::Custom<rocket::serde::json::Json<GenericResponse>> {
+	fn from(e: Error) -> Self {
+		rocket::response::status::Custom(e.status, rocket::serde::json::Json(e.into()))
+	}
+}
+
+/// Non-unique display name. Can include spaces and special characters.
 #[derive(Debug, Serialize, Deserialize, Clone, Default, ToSchema)]
 pub struct DisplayName(String);
 
+/// Unique, mutable handle used in URLs. Must be lowercase, alphanumeric, and may include underscores.
 #[derive(Debug, Clone, Default, ToSchema)]
 pub struct UniqueHandle<T>(String, PhantomData<T>);
 
@@ -250,32 +254,22 @@ impl DisplayName {
 
 	pub fn validate(&self) -> Result<(), Error> {
 		if self.0.len() < NAME_MIN_LENGTH {
-			return Err(Error::new(
-				Status::BadRequest,
-				&format!(
-					"DisplayName must be at least {} characters long.",
-					NAME_MIN_LENGTH
-				),
-				None,
-			));
+			return Err(Error::bad_request(&format!(
+				"DisplayName must be at least {} characters long.",
+				NAME_MIN_LENGTH
+			)));
 		}
 
 		if self.0.len() > NAME_MAX_LENGTH {
-			return Err(Error::new(
-				Status::BadRequest,
-				&format!(
-					"DisplayName must be at most {} characters long.",
-					NAME_MAX_LENGTH
-				),
-				None,
-			));
+			return Err(Error::bad_request(&format!(
+				"DisplayName must be at most {} characters long.",
+				NAME_MAX_LENGTH
+			)));
 		}
 
 		if self.0 != self.0.trim() {
-			return Err(Error::new(
-				Status::BadRequest,
+			return Err(Error::bad_request(
 				"DisplayName must not contain leading or trailing whitespace.",
-				None,
 			));
 		}
 
@@ -299,27 +293,20 @@ where
 		DisplayName::new(&self.0)?; // Use DisplayName requirements + the following
 
 		if self.0 != self.0.to_lowercase() {
-			return Err(Error::new(
-				Status::BadRequest,
-				"Handle must be lowercase.",
-				None,
-			));
+			return Err(Error::bad_request("Handle must be lowercase."));
 		}
 
 		if !self.0.chars().all(|c| c.is_alphanumeric() || c == '_') {
-			return Err(Error::new(
-				Status::BadRequest,
+			return Err(Error::bad_request(
 				"Handle must contain only alphanumeric characters and underscores.",
-				None,
 			));
 		}
 
 		if T::reserved_handles().contains(&self.0.as_str()) {
-			return Err(Error::new(
-				Status::BadRequest,
-				&format!("Handle `{}` is reserved.", self.0),
-				None,
-			));
+			return Err(Error::bad_request(&format!(
+				"Handle `{}` is reserved.",
+				self.0
+			)));
 		}
 
 		let client = surrealdb_client().await?;
@@ -328,11 +315,10 @@ where
 		let existing = T::db_search(&client, field, self.0.to_owned()).await?;
 
 		if !existing.is_empty() {
-			return Err(Error::new(
-				Status::BadRequest,
-				&format!("Handle `{}` already exists.", self.0),
-				None,
-			));
+			return Err(Error::bad_request(&format!(
+				"Handle `{}` already exists.",
+				self.0
+			)));
 		}
 
 		Ok(())

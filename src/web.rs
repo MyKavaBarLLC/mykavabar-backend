@@ -1,4 +1,4 @@
-use crate::{error::Error, generic::GenericResponse, routes};
+use crate::{generic::GenericResponse, routes};
 use rocket::{
 	catch, catchers,
 	fairing::{Fairing, Info, Kind},
@@ -65,7 +65,10 @@ pub async fn start_web(bound_port: BoundPort) {
 				routes::establishment::update_establishment,
 			],
 		)
-		.register("/", catchers![internal_error, not_found])
+		.register(
+			"/",
+			catchers![internal_error, not_found, unprocessable_entity, bad_request],
+		)
 		.attach(Shield::default().enable(Hsts::IncludeSubDomains(Duration::new(31536000, 0))))
 		.manage(bound_port)
 		.attach(PortCapture)
@@ -108,12 +111,24 @@ fn root_redirect() -> Redirect {
 
 #[catch(500)]
 fn internal_error(_req: &Request<'_>) -> Json<GenericResponse> {
-	let response: GenericResponse = Error::generic_500("Unhandled application panic").into();
-	Json(response)
+	Json(GenericResponse::error("Internal server error"))
 }
 
 #[catch(404)]
 fn not_found(_req: &Request<'_>) -> Json<GenericResponse> {
-	let response: GenericResponse = Error::not_found("This endpoint does not exist").into();
-	Json(response)
+	Json(GenericResponse::error("Endpoint not found"))
+}
+
+#[catch(422)]
+fn unprocessable_entity(_req: &Request<'_>) -> Json<GenericResponse> {
+	Json(GenericResponse::error(
+		"The request was well-formed but was unable to be followed due to semantic errors.",
+	))
+}
+
+#[catch(400)]
+fn bad_request(_req: &Request<'_>) -> Json<GenericResponse> {
+	Json(GenericResponse::error(
+		"The request could not be understood by the server due to malformed syntax.",
+	))
 }

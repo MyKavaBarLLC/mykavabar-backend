@@ -1,3 +1,4 @@
+use crate::routes::openapi::DummySuccess;
 use crate::routes::openapi::HandleDummy;
 use crate::{
 	error::Error,
@@ -16,32 +17,33 @@ use serde_json::json;
 use surreal_socket::dbrecord::DBRecord;
 use utoipa::ToSchema;
 
+/// User Response
 #[derive(Serialize, ToSchema)]
 pub struct UserResponse {
-	#[schema(example = "5b460bd6-d991-40f1-8067-6e9bbd35224a")]
 	pub uuid: String,
 	/// Unique, mutable handle used in URLs. Must be lowercase, alphanumeric, and may include underscores.
-	#[schema(example = "jasonk")]
-	pub username: String,
-	/// Non-unique display name. Can include spaces and special characters.
-	#[schema(example = "Jason")]
-	pub display_name: String,
+	#[schema(value_type = String)]
+	pub username: UniqueHandle<HandleDummy>,
+	pub display_name: DisplayName,
 }
 
 impl From<User> for UserResponse {
 	fn from(user: User) -> Self {
 		Self {
 			uuid: user.uuid.uuid_string(),
-			username: user.username.to_string(),
-			display_name: user.display_name.to_string(),
+			username: UniqueHandle::new_unchecked(user.username.to_string()),
+			display_name: user.display_name,
 		}
 	}
 }
 
+/// Registration Request
 #[derive(Deserialize, ToSchema)]
 pub struct RegistrationRequest {
-	pub username: String,
-	pub display_name: String,
+	/// Unique, mutable handle used in URLs. Must be lowercase, alphanumeric, and may include underscores.
+	#[schema(value_type = String)]
+	pub username: UniqueHandle<HandleDummy>,
+	pub display_name: DisplayName,
 	pub password: String,
 }
 
@@ -94,6 +96,7 @@ async fn get_user(id: &str, session: Session) -> Result<User, Error> {
 	}
 }
 
+/// Change password request
 #[derive(Deserialize, ToSchema)]
 pub struct ChangePasswordRequest {
 	pub old_password: String,
@@ -109,7 +112,7 @@ pub struct ChangePasswordRequest {
         ("id" = String, Path, description = "User ID")
     ),
     responses(
-        (status = 200, description = "Password changed", body = GenericResponse),
+        (status = 200, description = "Password changed", body = DummySuccess),
         (status = 401, description = "Unauthorized", body = GenericResponse),
         (status = 403, description = "Forbidden", body = GenericResponse)
     ),
@@ -135,8 +138,11 @@ pub async fn change_password(
 	Ok(Json(GenericResponse::success()))
 }
 
+/// User Request
 #[derive(Deserialize, ToSchema)]
 pub struct UserRequest {
+	/// Unique, mutable handle used in URLs. Must be lowercase, alphanumeric, and may include underscores.
+	#[schema(value_type = String)]
 	pub username: Option<UniqueHandle<HandleDummy>>,
 	pub display_name: Option<DisplayName>,
 
@@ -155,7 +161,7 @@ pub struct UserRequest {
         ("id" = String, Path, description = "User ID")
     ),
     responses(
-        (status = 200, description = "User updated", body = GenericResponse),
+        (status = 200, description = "User updated", body = UserResponse),
         (status = 400, description = "Bad request", body = GenericResponse),
         (status = 401, description = "Unauthorized", body = GenericResponse),
         (status = 403, description = "Forbidden", body = GenericResponse)
@@ -214,7 +220,7 @@ pub async fn update_user(
         ("id" = String, Path, description = "User ID")
     ),
     responses(
-        (status = 200, description = "User deleted", body = GenericResponse),
+        (status = 200, description = "User deleted", body = DummySuccess),
         (status = 401, description = "Unauthorized", body = GenericResponse),
         (status = 403, description = "Forbidden", body = GenericResponse)
     ),
