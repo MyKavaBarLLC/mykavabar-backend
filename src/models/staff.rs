@@ -16,9 +16,7 @@ pub struct Staff {
 
 #[async_trait]
 impl DBRecord for Staff {
-	fn table() -> &'static str {
-		"staff"
-	}
+	const TABLE_NAME: &'static str = "staff";
 
 	fn uuid(&self) -> SsUuid<Self> {
 		self.uuid.to_owned()

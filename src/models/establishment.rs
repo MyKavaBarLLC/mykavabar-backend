@@ -7,7 +7,8 @@ use rocket::serde::Deserialize;
 use rocket::serde::Serialize;
 use std::fmt::{Display, Formatter};
 use surreal_socket::{
-	dbrecord::{DBRecord, SsUuid},
+	cascade,
+	dbrecord::{CascadeDelete, DBRecord, SsUuid},
 	error::SurrealSocketError,
 };
 use utoipa::ToSchema;
@@ -36,25 +37,10 @@ impl HasHandle for Establishment {
 
 #[async_trait]
 impl DBRecord for Establishment {
-	fn table() -> &'static str {
-		"establishment"
-	}
+	const TABLE_NAME: &'static str = "establishment";
 
 	fn uuid(&self) -> SsUuid<Self> {
 		self.uuid.to_owned()
-	}
-
-	async fn pre_delete_hook(&self) -> Result<(), SurrealSocketError> {
-		let client = surrealdb_client().await?;
-
-		let staff_records =
-			Staff::db_search(&client, "establishment", self.uuid.to_owned()).await?;
-
-		for staff in staff_records {
-			staff.db_delete(&client).await?;
-		}
-
-		Ok(())
 	}
 
 	async fn post_update_hook(&self) -> Result<(), SurrealSocketError> {
@@ -75,6 +61,14 @@ impl DBRecord for Establishment {
 
 		client.query(&query).await?;
 		Ok(())
+	}
+
+	fn use_trash() -> bool {
+		true
+	}
+
+	fn cascade_delete() -> Vec<CascadeDelete> {
+		vec![cascade!(Staff, "establishment")]
 	}
 }
 

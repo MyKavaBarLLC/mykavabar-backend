@@ -35,6 +35,10 @@ use utoipa_rapidoc::RapiDoc;
 
 #[derive(OpenApi)]
 #[openapi(
+	info(
+        title = "MyKavaBar API",
+        description = "https://github.com/MyKavaBarLLC/mykavabar-backend"
+    ),
 	paths(token_json, register, change_password, update_user, delete_user, get_users, bootstrap_admin_route, check_token, get_establishment, create_establishment, search_establishments_route, update_establishment),
 	components(schemas(DisplayName, UniqueHandle<HandleDummy>, TokenRequest, TokenResponse, GenericResponse, RegistrationRequest, ChangePasswordRequest, UserRequest, UserResponse, BootstrapAdminRequest, EstablishmentSearchRequest, EstablishmentCard, EstablishmentRequest, DummySuccess)),
 	tags((name = "auth", description = "OAuth 2.0 Authentication"),
@@ -80,9 +84,7 @@ impl Modify for BearerTokenSecurity {
 pub struct HandleDummy;
 
 impl DBRecord for HandleDummy {
-	fn table() -> &'static str {
-		unimplemented!()
-	}
+	const TABLE_NAME: &'static str = unimplemented!();
 
 	fn uuid(&self) -> surreal_socket::dbrecord::SsUuid<Self> {
 		unimplemented!()

@@ -416,10 +416,7 @@ async fn clear_database() -> Result<(), Error> {
 		establishment.db_delete(&client).await?;
 	}
 
-	let staff = Staff::db_all(&client).await?;
-	for staff in staff {
-		staff.db_delete(&client).await?;
-	}
+	// Cascade delete handles the Staff records
 
 	Ok(())
 }

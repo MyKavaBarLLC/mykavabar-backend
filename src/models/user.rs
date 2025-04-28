@@ -1,13 +1,13 @@
 use crate::generic::{surrealdb_client, DisplayName, HasHandle, UniqueHandle};
+use crate::models::staff::Staff;
 use crate::{
 	error::Error, generic::HashedString, models::session::Session,
 	routes::users::RegistrationRequest,
 };
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use surreal_socket::dbrecord::SsUuid;
-use surreal_socket::dbrecord::{DBRecord, Expirable};
-use surreal_socket::error::SurrealSocketError;
+use surreal_socket::cascade;
+use surreal_socket::dbrecord::{CascadeDelete, DBRecord, Expirable, SsUuid};
 
 const PASSWORD_MIN_LENGTH: usize = 8;
 
@@ -40,9 +40,7 @@ impl Default for User {
 
 #[async_trait]
 impl DBRecord for User {
-	fn table() -> &'static str {
-		"users"
-	}
+	const TABLE_NAME: &'static str = "users";
 
 	fn uuid(&self) -> SsUuid<Self> {
 		self.uuid.to_owned()
@@ -52,15 +50,8 @@ impl DBRecord for User {
 		true
 	}
 
-	async fn pre_delete_hook(&self) -> Result<(), SurrealSocketError> {
-		let client = surrealdb_client().await?;
-		let sessions = Session::db_search(&client, "user", self.uuid.clone()).await?;
-
-		for session in sessions {
-			session.db_delete(&client).await?;
-		}
-
-		Ok(())
+	fn cascade_delete() -> Vec<CascadeDelete> {
+		vec![cascade!(Session, "user"), cascade!(Staff, "user")]
 	}
 }
 

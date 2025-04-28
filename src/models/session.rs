@@ -21,9 +21,7 @@ pub struct Session {
 }
 
 impl DBRecord for Session {
-	fn table() -> &'static str {
-		"sessions"
-	}
+	const TABLE_NAME: &'static str = "sessions";
 
 	fn uuid(&self) -> SsUuid<Self> {
 		self.uuid.to_owned()
