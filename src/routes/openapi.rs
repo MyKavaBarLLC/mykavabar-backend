@@ -18,6 +18,7 @@ use crate::routes::users::RegistrationRequest;
 use crate::routes::users::UserResponse;
 use crate::routes::users::__path_change_password;
 use crate::routes::users::__path_delete_user;
+use crate::routes::users::__path_get_user;
 use crate::routes::users::__path_get_users;
 use crate::routes::users::__path_register;
 use crate::routes::users::__path_update_user;
@@ -39,7 +40,7 @@ use utoipa_rapidoc::RapiDoc;
         title = "MyKavaBar API",
         description = "https://github.com/MyKavaBarLLC/mykavabar-backend"
     ),
-	paths(token_json, register, change_password, update_user, delete_user, get_users, bootstrap_admin_route, check_token, get_establishment, create_establishment, search_establishments_route, update_establishment),
+	paths(token_json, register, change_password, update_user, delete_user, get_user, get_users, bootstrap_admin_route, check_token, get_establishment, create_establishment, search_establishments_route, update_establishment),
 	components(schemas(DisplayName, UniqueHandle<HandleDummy>, TokenRequest, TokenResponse, GenericResponse, RegistrationRequest, ChangePasswordRequest, UserRequest, UserResponse, BootstrapAdminRequest, EstablishmentSearchRequest, EstablishmentCard, EstablishmentRequest, DummySuccess)),
 	tags((name = "auth", description = "OAuth 2.0 Authentication"),
 		(name = "user", description = "User management endpoints. Use `me` in place of user ID to refer to the authenticated user"),

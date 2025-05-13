@@ -30,8 +30,8 @@ pub async fn bootstrap_admin_route(
 	request: Json<BootstrapAdminRequest>,
 ) -> Result<Json<UserResponse>, status::Custom<Json<GenericResponse>>> {
 	let request = request.into_inner();
-	let response = bootstrap_admin(request.username, request.secret_key).await?;
-	Ok(Json(response.into()))
+	let user = bootstrap_admin(request.username, request.secret_key).await?;
+	Ok(Json(UserResponse::from_user(user).await?))
 }
 
 pub async fn bootstrap_admin(username: String, secret_key: String) -> Result<User, Error> {

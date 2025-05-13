@@ -52,6 +52,7 @@ pub async fn start_web(bound_port: BoundPort) {
 				routes::token::token_form,
 				routes::check_token::check_token,
 				// Users
+				routes::users::get_user,
 				routes::users::register,
 				routes::users::change_password,
 				routes::users::get_users,

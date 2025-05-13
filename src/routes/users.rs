@@ -1,3 +1,9 @@
+use crate::generic::EmailAddress;
+use crate::generic::PhoneNumber;
+use crate::models::establishment::Establishment;
+use crate::models::establishment::EstablishmentCard;
+use crate::models::staff::Staff;
+use crate::models::staff_permission::StaffPermissionKind;
 use crate::routes::openapi::DummySuccess;
 use crate::routes::openapi::HandleDummy;
 use crate::{
@@ -25,17 +31,125 @@ pub struct UserResponse {
 	#[schema(value_type = String)]
 	pub username: UniqueHandle<HandleDummy>,
 	pub display_name: DisplayName,
+	pub is_admin: bool,
+	pub phone_number: Option<PhoneNumber>,
+	pub avatar_url: Option<String>,
+	pub email: EmailAddress,
+	pub first_name: Option<String>,
+	pub last_name: Option<String>,
+	pub staff_roles: Vec<UserResponseStaffRole>,
 }
 
-impl From<User> for UserResponse {
-	fn from(user: User) -> Self {
-		Self {
+impl UserResponse {
+	pub async fn from_user(user: User) -> Result<Self, Error> {
+		let staff = user.get_staff().await?;
+		let mut staff_roles = vec![];
+
+		for staff in staff {
+			let staff_role = UserResponseStaffRole::from_staff(staff).await?;
+			staff_roles.push(staff_role);
+		}
+
+		Ok(Self {
 			uuid: user.uuid.uuid_string(),
 			username: UniqueHandle::new_unchecked(user.username.to_string()),
 			display_name: user.display_name,
-		}
+			is_admin: user.is_admin,
+			phone_number: user.phone_number,
+			email: user.email,
+			avatar_url: None, // todo
+			first_name: user.first_name,
+			last_name: user.last_name,
+			staff_roles,
+		})
 	}
 }
+
+/// A Staff link as it appears in the UserResponse
+#[derive(Serialize, ToSchema)]
+pub struct UserResponseStaffRole {
+	pub establishment: EstablishmentCard,
+	pub permissions: Vec<StaffPermissionKind>,
+}
+
+impl UserResponseStaffRole {
+	pub async fn from_staff(staff: Staff) -> Result<Self, Error> {
+		let client = surrealdb_client().await?;
+
+		let establishment =
+			match Establishment::db_by_id(&client, &staff.establishment.uuid_string()).await? {
+				Some(establishment) => establishment,
+				None => {
+					staff.db_delete(&client).await?;
+
+					return Err(Error::generic_500(&format!(
+						"Illegal state: Staff {} linked to non-existent establishment: {}. Staff deleted.",
+						staff.uuid,
+						staff.establishment
+					)));
+				}
+			};
+
+		Ok(Self {
+			establishment: EstablishmentCard::from(establishment),
+			permissions: staff.get_permissions().await?,
+		})
+	}
+}
+
+/// Get User
+#[utoipa::path(
+    get,
+    path = "/v1/users/{id}",
+	description = "Get a full User by ID. Only available to admins or the user themselves. If the ID is 'me', the session's user is returned.",
+    params(
+        ("id" = String, Path, description = "User ID")
+    ),
+    responses(
+        (status = 200, description = "User fetched", body = DummySuccess),
+        (status = 401, description = "Unauthorized", body = GenericResponse),
+        (status = 403, description = "Forbidden", body = GenericResponse)
+    ),
+    security(
+        ("bearerAuth" = [])
+    ),
+    tag = "user"
+)]
+#[rocket::get("/v1/users/<id>")]
+pub async fn get_user(
+	id: &str,
+	bearer_token: BearerToken,
+) -> Result<Json<UserResponse>, status::Custom<Json<GenericResponse>>> {
+	let session = bearer_token.validate().await?;
+	let user = get_user_as_self_or_admin(&id, session).await?;
+	Ok(Json(UserResponse::from_user(user).await?))
+}
+
+/*
+/// Get Profile
+#[utoipa::path(
+	get,
+	path = "/v1/profile/{handle}",
+	description = "Get a partial User by handle. Private fields are null.",
+	params(
+		("handle" = String, Path, description = "User handle")
+	),
+	responses(
+		(status = 200, description = "User fetched", body = DummySuccess),
+		(status = 401, description = "Unauthorized", body = GenericResponse),
+		(status = 403, description = "Forbidden", body = GenericResponse)
+	),
+	security(),
+	tag = "user"
+)]
+#[rocket::get("/v1/profile/<id>")]
+pub async fn get_profile(
+	id: String,
+	bearer_token: BearerToken,
+) -> Result<Json<UserResponse>, status::Custom<Json<GenericResponse>>> {
+	unimplemented!()
+}
+*/
 
 /// Registration Request
 #[derive(Deserialize, ToSchema)]
@@ -77,7 +191,7 @@ pub async fn register(
 /// This function accepts a user ID and a session. If the ID is "me", it returns the session's user.
 /// Otherwise, it returns the user corresponding to the provided ID only if the session's user is
 /// the same as the user with the ID or if the session's user is an admin.
-async fn get_user(id: &str, session: Session) -> Result<User, Error> {
+async fn get_user_as_self_or_admin(id: &str, session: Session) -> Result<User, Error> {
 	if id == "me" {
 		session.user().await
 	} else {
@@ -128,7 +242,7 @@ pub async fn change_password(
 	bearer_token: BearerToken,
 ) -> Result<Json<GenericResponse>, status::Custom<Json<GenericResponse>>> {
 	let session = bearer_token.validate().await?;
-	let mut user = get_user(&id, session).await?;
+	let mut user = get_user_as_self_or_admin(&id, session).await?;
 
 	if user.verify_password(&request.old_password).is_err() {
 		return Err(Error::new(Status::Unauthorized, "Invalid password", None).into());
@@ -178,7 +292,7 @@ pub async fn update_user(
 	bearer_token: BearerToken,
 ) -> Result<Json<UserResponse>, status::Custom<Json<GenericResponse>>> {
 	let session = bearer_token.validate().await?;
-	let mut user = get_user(id, session).await?;
+	let mut user = get_user_as_self_or_admin(id, session).await?;
 	let mut updates = vec![];
 
 	if let Some(username) = &request.username {
@@ -209,7 +323,7 @@ pub async fn update_user(
 	.await
 	.map_err(Into::<Error>::into)?;
 
-	Ok(Json(user.into()))
+	Ok(Json(UserResponse::from_user(user).await?))
 }
 
 #[utoipa::path(
@@ -235,7 +349,7 @@ pub async fn delete_user(
 	bearer_token: BearerToken,
 ) -> Result<Json<GenericResponse>, status::Custom<Json<GenericResponse>>> {
 	let session = bearer_token.validate().await?;
-	let user = get_user(id, session).await?;
+	let user = get_user_as_self_or_admin(id, session).await?;
 
 	user.db_delete(&surrealdb_client().await.map_err(Into::<Error>::into)?)
 		.await
@@ -272,10 +386,13 @@ pub async fn get_users(
 
 	let users = User::db_all(&surrealdb_client().await.map_err(Into::<Error>::into)?)
 		.await
-		.map_err(Into::<Error>::into)?
-		.iter()
-		.map(|user| UserResponse::from(user.to_owned()))
-		.collect();
+		.map_err(Into::<Error>::into)?;
 
-	Ok(Json(users))
+	let mut response = vec![];
+
+	for user in users {
+		response.push(UserResponse::from_user(user).await?);
+	}
+
+	Ok(Json(response))
 }

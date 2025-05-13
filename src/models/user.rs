@@ -1,4 +1,7 @@
-use crate::generic::{surrealdb_client, DisplayName, HasHandle, UniqueHandle};
+use crate::generic::{
+	surrealdb_client, DisplayName, EmailAddress, HasHandle, PhoneNumber, UniqueHandle,
+};
+use crate::models::image::Image;
 use crate::models::staff::Staff;
 use crate::{
 	error::Error, generic::HashedString, models::session::Session,
@@ -18,6 +21,11 @@ pub struct User {
 	pub display_name: DisplayName,
 	pub password_hash: HashedString,
 	pub is_admin: bool,
+	pub phone_number: Option<PhoneNumber>,
+	pub email: EmailAddress,
+	pub avatar: Option<SsUuid<Image>>,
+	pub first_name: Option<String>,
+	pub last_name: Option<String>,
 }
 
 impl HasHandle for User {
@@ -34,6 +42,11 @@ impl Default for User {
 			display_name: DisplayName::default(),
 			password_hash: Default::default(),
 			is_admin: false,
+			phone_number: None,
+			email: EmailAddress::default(),
+			avatar: None,
+			first_name: None,
+			last_name: None,
 		}
 	}
 }
@@ -140,5 +153,10 @@ impl User {
 		.await?;
 
 		Ok(())
+	}
+
+	pub async fn get_staff(&self) -> Result<Vec<Staff>, Error> {
+		let client = surrealdb_client().await?;
+		Ok(Staff::db_search(&client, "user", self.uuid.to_string()).await?)
 	}
 }

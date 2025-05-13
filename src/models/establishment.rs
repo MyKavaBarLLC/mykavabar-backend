@@ -1,4 +1,4 @@
-use crate::generic::{DisplayName, HasHandle, UniqueHandle};
+use crate::generic::{DisplayName, HasHandle, PhoneNumber, UniqueHandle};
 use crate::models::staff::Staff;
 use crate::routes::establishment::EstablishmentRequest;
 use crate::{error::Error, generic::surrealdb_client};
@@ -22,7 +22,9 @@ pub struct Establishment {
 	pub handle: UniqueHandle<Establishment>,
 	pub schedule: Schedule,
 	pub coordinate: Coordinate,
-	pub rating: Rating,
+	pub rating: EstablishmentRating,
+	pub address: String,
+	pub phone_number: Option<PhoneNumber>,
 }
 
 impl HasHandle for Establishment {
@@ -37,7 +39,7 @@ impl HasHandle for Establishment {
 
 #[async_trait]
 impl DBRecord for Establishment {
-	const TABLE_NAME: &'static str = "establishment";
+	const TABLE_NAME: &'static str = "establishments";
 
 	fn uuid(&self) -> SsUuid<Self> {
 		self.uuid.to_owned()
@@ -91,9 +93,12 @@ impl Establishment {
 	pub async fn try_from_request(request: EstablishmentRequest) -> Result<Self, Error> {
 		let establishment = Self {
 			uuid: SsUuid::<Establishment>::new(),
-			display_name: request
-				.display_name
-				.ok_or(Error::bad_request("Display name is required"))?,
+			display_name: if let Some(display_name) = request.display_name {
+				display_name.validate()?;
+				display_name
+			} else {
+				return Err(Error::bad_request("Display name is required"));
+			},
 			handle: if let Some(handle) = request.handle {
 				UniqueHandle::new(&handle.to_string()).await?
 			} else {
@@ -102,9 +107,22 @@ impl Establishment {
 			schedule: request.schedule.unwrap_or_default(),
 			coordinate: request.coordinate.unwrap_or_default(),
 			rating: request.rating.unwrap_or_default(),
+			address: request.address.unwrap_or_default(),
+			phone_number: {
+				if let Some(phone_number) = request.phone_number {
+					Some(PhoneNumber::new(&phone_number.to_string())?)
+				} else {
+					None
+				}
+			},
 		};
 
 		Ok(establishment)
+	}
+
+	pub async fn get_staff(&self) -> Result<Vec<Staff>, Error> {
+		let client = surrealdb_client().await?;
+		Ok(Staff::db_search(&client, "establishment", self.uuid.to_string()).await?)
 	}
 }
 
@@ -210,9 +228,9 @@ impl Coordinate {
 ///
 /// A rating of 0 is considered unrated. 1-99 is invalid.
 #[derive(Serialize, Deserialize, ToSchema, Default, Clone)]
-pub struct Rating(u16);
+pub struct EstablishmentRating(u16);
 
-impl Rating {
+impl EstablishmentRating {
 	pub fn new(rating: u16) -> Result<Self, Error> {
 		let rating = Self(rating);
 		rating.validate()?;

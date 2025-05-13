@@ -1,3 +1,4 @@
+use crate::error::Error;
 use crate::models::user::User;
 use crate::{generic::surrealdb_client, models::establishment::Establishment};
 use rocket::async_trait;
@@ -6,6 +7,8 @@ use surreal_socket::{
 	dbrecord::{DBRecord, SsUuid},
 	error::SurrealSocketError,
 };
+
+use super::staff_permission::{StaffPermission, StaffPermissionKind};
 
 #[derive(Serialize, Deserialize, Default)]
 pub struct Staff {
@@ -46,5 +49,34 @@ impl DBRecord for Staff {
 		}
 
 		Ok(())
+	}
+}
+
+impl Staff {
+	pub async fn get_permissions(&self) -> Result<Vec<StaffPermissionKind>, Error> {
+		let client = surrealdb_client().await?;
+
+		Ok(
+			StaffPermission::db_search(&client, "staff", self.uuid.to_string())
+				.await?
+				.into_iter()
+				.map(|p| p.kind)
+				.collect::<Vec<StaffPermissionKind>>(),
+		)
+	}
+
+	pub async fn get_user(&self) -> Result<User, Error> {
+		let client = surrealdb_client().await?;
+
+		match User::db_by_id(&client, &self.user.uuid_string()).await? {
+			Some(user) => Ok(user),
+			None => {
+				self.db_delete(&client).await?;
+				Err(Error::generic_500(&format!(
+					"Illegal state: User not found for staff {}. Staff deleted.",
+					self.uuid.to_string()
+				)))
+			}
+		}
 	}
 }

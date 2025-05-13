@@ -15,7 +15,7 @@ use utoipa::ToSchema;
 
 // Establishment & User names
 const NAME_MIN_LENGTH: usize = 2;
-const NAME_MAX_LENGTH: usize = 32;
+const NAME_MAX_LENGTH: usize = 64;
 
 pub async fn surrealdb_client() -> Result<Surreal<surrealdb::engine::remote::ws::Client>, String> {
 	let env = Environment::new();
@@ -247,12 +247,18 @@ pub struct UniqueHandle<T>(String, PhantomData<T>);
 
 impl DisplayName {
 	pub fn new(name: &str) -> Result<Self, Error> {
-		let display_name = Self(name.trim().to_owned());
+		let display_name = Self(name.to_owned());
 		display_name.validate()?;
 		Ok(display_name)
 	}
 
 	pub fn validate(&self) -> Result<(), Error> {
+		if self.0.trim() != self.0 {
+			return Err(Error::bad_request(
+				"DisplayName must not contain leading or trailing whitespace.",
+			));
+		}
+
 		if self.0.len() < NAME_MIN_LENGTH {
 			return Err(Error::bad_request(&format!(
 				"DisplayName must be at least {} characters long.",
@@ -284,7 +290,7 @@ where
 	/// Create a new handle, ensuring requirements are met.
 	/// Use `new_unchecked()` to skip validation.
 	pub async fn new(name: &str) -> Result<Self, Error> {
-		let handle = Self(name.trim().to_owned(), PhantomData);
+		let handle: UniqueHandle<T> = Self(name.to_owned(), PhantomData);
 		handle.validate().await?;
 		Ok(handle)
 	}
@@ -387,5 +393,67 @@ where
 		}
 
 		deserializer.deserialize_string(HandleVisitor(PhantomData))
+	}
+}
+
+/// A phone number in E.164 format
+#[derive(Serialize, Deserialize, ToSchema, Default, Clone)]
+pub struct PhoneNumber(String);
+
+impl PhoneNumber {
+	pub fn new(phone_number: &str) -> Result<Self, Error> {
+		let phone_number = Self(phone_number.to_owned());
+		phone_number.validate()?;
+		Ok(phone_number)
+	}
+
+	pub fn validate(&self) -> Result<(), Error> {
+		let s = self.0.as_str();
+
+		if !s.starts_with('+') {
+			return Err(Error::bad_request(
+				"Phone number must start with a '+' (E.164 format)",
+			));
+		}
+
+		let digits = &s[1..];
+
+		if digits.len() < 8 || digits.len() > 15 {
+			return Err(Error::bad_request(
+				"Phone number must be between 8 and 15 digits",
+			));
+		}
+
+		if !digits.chars().all(|c| c.is_ascii_digit()) {
+			return Err(Error::bad_request("Phone number must be numeric"));
+		}
+
+		Ok(())
+	}
+}
+
+impl Display for PhoneNumber {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(f, "{}", self.0)
+	}
+}
+
+/// An RFC-compliant email address
+#[derive(Serialize, Deserialize, ToSchema, Default, Clone)]
+pub struct EmailAddress(String);
+
+impl EmailAddress {
+	pub fn new(email: &str) -> Result<Self, Error> {
+		let email = Self(email.to_owned());
+		email.validate()?;
+		Ok(email)
+	}
+
+	pub fn validate(&self) -> Result<(), Error> {
+		if !email_address::EmailAddress::is_valid(&self.0) {
+			return Err(Error::bad_request(&format!("Invalid email address")));
+		}
+
+		Ok(())
 	}
 }
