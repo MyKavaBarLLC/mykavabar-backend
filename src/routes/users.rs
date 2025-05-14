@@ -1,9 +1,9 @@
 use crate::generic::EmailAddress;
 use crate::generic::PhoneNumber;
 use crate::models::establishment::Establishment;
-use crate::models::establishment::EstablishmentCard;
 use crate::models::staff::Staff;
 use crate::models::staff_permission::StaffPermissionKind;
+use crate::routes::establishment::EstablishmentCard;
 use crate::routes::openapi::DummySuccess;
 use crate::routes::openapi::HandleDummy;
 use crate::{
