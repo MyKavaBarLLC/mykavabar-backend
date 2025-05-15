@@ -87,6 +87,7 @@ impl EstablishmentResponse {
 			let user = staff.get_user().await?;
 
 			staff_response.push(EstablishmentResponseStaff {
+				user_uuid: user.uuid.uuid_string(),
 				display_name: user.display_name,
 				handle: user.username,
 				permissions: staff.get_permissions().await?,
@@ -108,6 +109,7 @@ impl EstablishmentResponse {
 
 #[derive(Serialize, ToSchema)]
 pub struct EstablishmentResponseStaff {
+	pub user_uuid: String,
 	pub display_name: DisplayName,
 	/// Unique, mutable handle used in URLs. Must be lowercase, alphanumeric, and may include underscores.
 	#[schema(value_type = String)]
@@ -173,9 +175,9 @@ pub async fn create_establishment(
 )]
 #[rocket::get("/v1/establishments/<id_or_handle>")]
 pub async fn get_establishment(
-	id_or_handle: String,
+	id_or_handle: &str,
 ) -> Result<Json<EstablishmentResponse>, status::Custom<Json<GenericResponse>>> {
-	match Establishment::by_id_or_handle(&id_or_handle).await? {
+	match Establishment::by_id_or_handle(id_or_handle).await? {
 		Some(establishment) => Ok(Json(
 			EstablishmentResponse::from_establishment(establishment).await?,
 		)),
@@ -205,25 +207,39 @@ pub async fn get_establishment(
 #[rocket::patch("/v1/establishments/<id>", data = "<request>")]
 pub async fn update_establishment(
 	request: Json<EstablishmentRequest>,
-	id: String,
+	id: &str,
 	bearer_token: BearerToken,
 ) -> Result<Json<EstablishmentResponse>, status::Custom<Json<GenericResponse>>> {
 	let user = bearer_token.validate().await?.user().await?;
-
-	if !user.is_admin {
-		// todo: Staff perms
-		return Err(Error::forbidden().into());
-	}
-
 	let client = surrealdb_client().await.map_err(Into::<Error>::into)?;
 
-	let mut establishment = match Establishment::db_by_id(&client, &id)
+	let mut establishment = match Establishment::db_by_id(&client, id)
 		.await
 		.map_err(Into::<Error>::into)?
 	{
 		Some(establishment) => establishment,
 		None => return Err(Error::not_found("Establishment not found").into()),
 	};
+
+	let staff = user.get_staff().await?;
+	let mut allowed = false;
+
+	if user.is_admin {
+		allowed = true;
+	} else {
+		for s in staff {
+			if s.establishment.uuid_string() == id
+				&& s.has_permission(StaffPermissionKind::Admin).await?
+			{
+				allowed = true;
+				break;
+			}
+		}
+	}
+
+	if !allowed {
+		return Err(Error::forbidden().into());
+	}
 
 	if let Some(display_name) = &request.display_name {
 		display_name.validate()?;
@@ -315,7 +331,7 @@ async fn search_establishments(
 						coordinates: [{}, {}]
 					}}) < {}
 				ORDER BY {} DESC
-				LIMIT 100;
+				LIMIT 200;
 			"#,
 			loc.lng,
 			loc.lat,
@@ -330,7 +346,7 @@ async fn search_establishments(
 		}
 
 		format!(
-			"SELECT * FROM {} ORDER BY {} DESC LIMIT 10;",
+			"SELECT * FROM {} ORDER BY {} DESC LIMIT 200;",
 			Establishment::table(),
 			search.sort_by.as_ref()
 		)

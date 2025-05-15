@@ -632,7 +632,7 @@ async fn migrate() -> Result<(), Error> {
 		println!("Migrating bar: {}", bar_v["name"].as_str().unwrap());
 
 		let location_v = match &bar_v["location"] {
-			serde_json::Value::String(s) => {
+			serde_json::Value::String(_) => {
 				println!(
 					"Skipping bar {}: invalid location",
 					bar_v["name"].as_str().unwrap()

@@ -1,6 +1,6 @@
 [package]
 name = "mykavabar-backend"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["Jason <jason@elg.gg>"]
 edition = "2021"
 repository = "https://github.com/MyKavaBarLLC/mykavabar-backend"

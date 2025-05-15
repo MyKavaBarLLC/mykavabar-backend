@@ -20,7 +20,7 @@ impl DBRecord for StaffPermission {
 	}
 }
 
-#[derive(Serialize, Deserialize, ToSchema)]
+#[derive(Serialize, Deserialize, ToSchema, PartialEq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum StaffPermissionKind {
 	Admin,

@@ -451,7 +451,7 @@ impl EmailAddress {
 
 	pub fn validate(&self) -> Result<(), Error> {
 		if !email_address::EmailAddress::is_valid(&self.0) {
-			return Err(Error::bad_request(&format!("Invalid email address")));
+			return Err(Error::bad_request("Invalid email address"));
 		}
 
 		Ok(())

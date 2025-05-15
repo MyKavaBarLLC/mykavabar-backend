@@ -43,7 +43,7 @@ pub struct UserResponse {
 impl UserResponse {
 	pub async fn from_user(user: User) -> Result<Self, Error> {
 		let staff = user.get_staff().await?;
-		let mut staff_roles = vec![];
+		let mut staff_roles = Vec::with_capacity(staff.len());
 
 		for staff in staff {
 			let staff_role = UserResponseStaffRole::from_staff(staff).await?;
@@ -121,7 +121,7 @@ pub async fn get_user(
 	bearer_token: BearerToken,
 ) -> Result<Json<UserResponse>, status::Custom<Json<GenericResponse>>> {
 	let session = bearer_token.validate().await?;
-	let user = get_user_as_self_or_admin(&id, session).await?;
+	let user = get_user_as_self_or_admin(id, session).await?;
 	Ok(Json(UserResponse::from_user(user).await?))
 }
 
@@ -144,7 +144,7 @@ pub async fn get_user(
 )]
 #[rocket::get("/v1/profile/<id>")]
 pub async fn get_profile(
-	id: String,
+	id: &str,
 	bearer_token: BearerToken,
 ) -> Result<Json<UserResponse>, status::Custom<Json<GenericResponse>>> {
 	unimplemented!()
@@ -237,12 +237,12 @@ pub struct ChangePasswordRequest {
 )]
 #[rocket::post("/v1/users/<id>/change_password", format = "json", data = "<request>")]
 pub async fn change_password(
-	id: String,
+	id: &str,
 	request: Json<ChangePasswordRequest>,
 	bearer_token: BearerToken,
 ) -> Result<Json<GenericResponse>, status::Custom<Json<GenericResponse>>> {
 	let session = bearer_token.validate().await?;
-	let mut user = get_user_as_self_or_admin(&id, session).await?;
+	let mut user = get_user_as_self_or_admin(id, session).await?;
 
 	if user.verify_password(&request.old_password).is_err() {
 		return Err(Error::new(Status::Unauthorized, "Invalid password", None).into());
@@ -388,7 +388,7 @@ pub async fn get_users(
 		.await
 		.map_err(Into::<Error>::into)?;
 
-	let mut response = vec![];
+	let mut response = Vec::with_capacity(users.len());
 
 	for user in users {
 		response.push(UserResponse::from_user(user).await?);

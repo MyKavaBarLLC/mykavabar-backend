@@ -74,9 +74,14 @@ impl Staff {
 				self.db_delete(&client).await?;
 				Err(Error::generic_500(&format!(
 					"Illegal state: User not found for staff {}. Staff deleted.",
-					self.uuid.to_string()
+					self.uuid
 				)))
 			}
 		}
+	}
+
+	pub async fn has_permission(&self, permission: StaffPermissionKind) -> Result<bool, Error> {
+		let permissions = self.get_permissions().await?;
+		Ok(permissions.contains(&permission))
 	}
 }
