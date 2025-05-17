@@ -52,11 +52,11 @@ pub struct Environment {
 }
 
 macro_rules! initialize_env {
-    ($($field:ident),+) => {
-        pub fn initialize_env(&mut self) {
-            $(self.$field = EnvVarKey(stringify!($field).to_uppercase());)*
-        }
-    };
+	($($field:ident),+) => {
+		pub fn initialize_env(&mut self) {
+			$(self.$field = EnvVarKey(stringify!($field).to_uppercase());)*
+		}
+	};
 }
 
 impl Environment {

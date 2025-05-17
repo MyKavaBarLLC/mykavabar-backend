@@ -14,16 +14,16 @@ use utoipa::ToSchema;
 
 /// Set admin
 #[utoipa::path(
-    post,
-    path = "/v1/bootstrap-admin",
-    description = "Elevate a given User to an admin, providing only a secret key for authentication. Only available if there are fewer than 3 admins.",
-    request_body(content = BootstrapAdminRequest, content_type = "application/json"),
+	post,
+	path = "/v1/bootstrap-admin",
+	description = "Elevate a given User to an admin, providing only a secret key for authentication. Only available if there are fewer than 3 admins.",
+	request_body(content = BootstrapAdminRequest, content_type = "application/json"),
 	responses(
-        (status = 200, description = "Admin set", body = UserResponse),
-        (status = 401, description = "Unauthorized", body = GenericResponse),
-    ),
+		(status = 200, description = "Admin set", body = UserResponse),
+		(status = 401, description = "Unauthorized", body = GenericResponse),
+	),
 	security(),
-    tag = "user"
+	tag = "user"
 )]
 #[rocket::post("/v1/bootstrap-admin", data = "<request>")]
 pub async fn bootstrap_admin_route(

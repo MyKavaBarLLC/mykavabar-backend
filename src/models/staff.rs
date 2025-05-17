@@ -1,14 +1,15 @@
 use crate::error::Error;
+use crate::models::staff_permission::{StaffPermission, StaffPermissionKind};
 use crate::models::user::User;
 use crate::{generic::surrealdb_client, models::establishment::Establishment};
 use rocket::async_trait;
 use serde::{Deserialize, Serialize};
+use surreal_socket::cascade;
+use surreal_socket::dbrecord::CascadeDelete;
 use surreal_socket::{
 	dbrecord::{DBRecord, SsUuid},
 	error::SurrealSocketError,
 };
-
-use super::staff_permission::{StaffPermission, StaffPermissionKind};
 
 #[derive(Serialize, Deserialize, Default)]
 pub struct Staff {
@@ -23,6 +24,10 @@ impl DBRecord for Staff {
 
 	fn uuid(&self) -> SsUuid<Self> {
 		self.uuid.to_owned()
+	}
+
+	fn cascade_delete() -> Vec<CascadeDelete> {
+		vec![cascade!(StaffPermission, "staff")]
 	}
 
 	async fn pre_create_hook(&self) -> Result<(), SurrealSocketError> {
@@ -63,6 +68,39 @@ impl Staff {
 				.map(|p| p.kind)
 				.collect::<Vec<StaffPermissionKind>>(),
 		)
+	}
+
+	pub async fn set_permissions(
+		&mut self,
+		new_permissions: Vec<StaffPermissionKind>,
+	) -> Result<(), Error> {
+		let client = surrealdb_client().await?;
+		let existing_permissions = StaffPermission::get_belonging_to(&self.uuid).await?;
+
+		for permission in existing_permissions {
+			if !new_permissions.contains(&permission.kind) {
+				permission.db_delete(&client).await?;
+			}
+		}
+
+		for permission in new_permissions {
+			self.set_permission(permission).await?;
+		}
+
+		Ok(())
+	}
+
+	pub async fn set_permission(&mut self, permission: StaffPermissionKind) -> Result<(), Error> {
+		let client = surrealdb_client().await?;
+		let existing_permissions = StaffPermission::get_belonging_to(&self.uuid).await?;
+
+		if !existing_permissions.iter().any(|p| p.kind == permission) {
+			StaffPermission::new(&self.uuid, permission)
+				.db_create(&client)
+				.await?;
+		}
+
+		Ok(())
 	}
 
 	pub async fn get_user(&self) -> Result<User, Error> {

@@ -1,5 +1,6 @@
 #![allow(clippy::all)]
 
+use crate::models::review::ReviewContext;
 use crate::models::staff_permission::{StaffPermission, StaffPermissionKind};
 use crate::{
 	error::Error,
@@ -770,7 +771,7 @@ async fn migrate() -> Result<(), Error> {
 		Review {
 			uuid: SsUuid::new(),
 			user: user_uuid.clone(),
-			establishment: bar_uuid.clone(),
+			context: ReviewContext::EstablishmentReview(bar_uuid.clone()),
 			rating: ReviewRating::new(review["rating"].as_u64().unwrap() as u8)?,
 			body: {
 				let body = review["content"].as_str().unwrap();

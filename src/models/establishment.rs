@@ -1,4 +1,6 @@
 use crate::generic::{DisplayName, HasHandle, PhoneNumber, UniqueHandle};
+use crate::models::review::Review;
+use crate::models::review::ReviewContext;
 use crate::models::staff::Staff;
 use crate::routes::establishment::EstablishmentRequest;
 use crate::{error::Error, generic::surrealdb_client};
@@ -70,7 +72,10 @@ impl DBRecord for Establishment {
 	}
 
 	fn cascade_delete() -> Vec<CascadeDelete> {
-		vec![cascade!(Staff, "establishment")]
+		vec![
+			cascade!(Staff, "establishment"),
+			cascade!(Review, "establishment"),
+		]
 	}
 }
 
@@ -91,7 +96,7 @@ impl Establishment {
 	}
 
 	pub async fn try_from_request(request: EstablishmentRequest) -> Result<Self, Error> {
-		let establishment = Self {
+		Ok(Self {
 			uuid: SsUuid::<Establishment>::new(),
 			display_name: if let Some(display_name) = request.display_name {
 				display_name.validate()?;
@@ -115,14 +120,75 @@ impl Establishment {
 					None
 				}
 			},
-		};
-
-		Ok(establishment)
+		})
 	}
 
 	pub async fn get_staff(&self) -> Result<Vec<Staff>, Error> {
 		let client = surrealdb_client().await?;
 		Ok(Staff::db_search(&client, "establishment", self.uuid.to_string()).await?)
+	}
+
+	pub async fn get_staff_by_user_id(&self, user_id: &str) -> Result<Option<Staff>, Error> {
+		for staff in self.get_staff().await? {
+			if staff.user.uuid_string() == user_id {
+				return Ok(Some(staff));
+			}
+		}
+
+		Ok(None)
+	}
+
+	pub async fn calculate_rating(&self) -> Result<EstablishmentRating, Error> {
+		let client = surrealdb_client().await?;
+		let reviews = Review::db_search(&client, "establishment", self.uuid.uuid_string()).await?;
+
+		if reviews.is_empty() {
+			return EstablishmentRating::new(0);
+		}
+
+		let mut total: f64 = 0.0;
+
+		for review in &reviews {
+			total += review.rating.value() as f64;
+		}
+
+		let average = total / reviews.len() as f64;
+		EstablishmentRating::new((average * 100.0) as u16)
+	}
+
+	pub async fn on_review_update(review: &Review) -> Result<(), Error> {
+		let client = surrealdb_client().await?;
+
+		let establishment_uuid = match &review.context {
+			ReviewContext::EstablishmentReview(establishment) => establishment,
+			_ => return Ok(()),
+		};
+
+		let establishment =
+			match Establishment::db_by_id(&client, &establishment_uuid.uuid_string()).await? {
+				Some(establishment) => establishment,
+				None => return Err(Error::not_found("Establishment not found")),
+			};
+
+		let rating: EstablishmentRating = establishment.calculate_rating().await?;
+
+		establishment
+			.db_update_field(&client, "rating", &rating)
+			.await?;
+
+		let user = review.get_user().await?;
+
+		log::info!(
+			"User {} ({}) reviewed Establishment {} ({}). Rating updated: {} -> {}",
+			user.username,
+			user.uuid,
+			establishment.handle,
+			establishment.uuid,
+			establishment.rating.value(),
+			rating.value()
+		);
+
+		Ok(())
 	}
 }
 
@@ -244,5 +310,9 @@ impl EstablishmentRating {
 		}
 
 		Ok(())
+	}
+
+	pub fn value(&self) -> u16 {
+		self.0
 	}
 }

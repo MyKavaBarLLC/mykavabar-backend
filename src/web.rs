@@ -64,6 +64,12 @@ pub async fn start_web(bound_port: BoundPort) {
 				routes::establishment::get_establishment,
 				routes::establishment::search_establishments_route,
 				routes::establishment::update_establishment,
+				routes::establishment::delete_establishment,
+				routes::establishment::update_establishment_staff,
+				routes::establishment::delete_establishment_staff,
+				routes::establishment::add_establishment_review,
+				routes::establishment::update_establishment_review,
+				routes::establishment::delete_establishment_review,
 			],
 		)
 		.register(

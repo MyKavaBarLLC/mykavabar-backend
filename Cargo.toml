@@ -1,6 +1,6 @@
 [package]
 name = "mykavabar-backend"
-version = "0.1.2"
+version = "0.1.3"
 authors = ["Jason <jason@elg.gg>"]
 edition = "2021"
 repository = "https://github.com/MyKavaBarLLC/mykavabar-backend"
@@ -31,3 +31,4 @@ utoipa-rapidoc = "6.0.0"
 futures = "0.3.31"
 subtle = "2.6"
 email_address = "0.2.9"
+fuzzy-matcher = "0.3.7"

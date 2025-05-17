@@ -99,57 +99,31 @@ impl UserResponseStaffRole {
 
 /// Get User
 #[utoipa::path(
-    get,
-    path = "/v1/users/{id}",
-	description = "Get a full User by ID. Only available to admins or the user themselves. If the ID is 'me', the session's user is returned.",
-    params(
-        ("id" = String, Path, description = "User ID")
-    ),
-    responses(
-        (status = 200, description = "User fetched", body = DummySuccess),
-        (status = 401, description = "Unauthorized", body = GenericResponse),
-        (status = 403, description = "Forbidden", body = GenericResponse)
-    ),
-    security(
-        ("bearerAuth" = [])
-    ),
-    tag = "user"
-)]
-#[rocket::get("/v1/users/<id>")]
-pub async fn get_user(
-	id: &str,
-	bearer_token: BearerToken,
-) -> Result<Json<UserResponse>, status::Custom<Json<GenericResponse>>> {
-	let session = bearer_token.validate().await?;
-	let user = get_user_as_self_or_admin(id, session).await?;
-	Ok(Json(UserResponse::from_user(user).await?))
-}
-
-/*
-/// Get Profile
-#[utoipa::path(
 	get,
-	path = "/v1/profile/{handle}",
-	description = "Get a partial User by handle. Private fields are null.",
+	path = "/v1/users/{user_id}",
+	description = "Get a full User by ID. Only available to admins or the user themselves. If the ID is 'me', the session's user is returned.",
 	params(
-		("handle" = String, Path, description = "User handle")
+		("user_id" = String, Path, description = "User ID")
 	),
 	responses(
 		(status = 200, description = "User fetched", body = DummySuccess),
 		(status = 401, description = "Unauthorized", body = GenericResponse),
 		(status = 403, description = "Forbidden", body = GenericResponse)
 	),
-	security(),
+	security(
+		("bearerAuth" = [])
+	),
 	tag = "user"
 )]
-#[rocket::get("/v1/profile/<id>")]
-pub async fn get_profile(
-	id: &str,
+#[rocket::get("/v1/users/<user_id>")]
+pub async fn get_user(
+	user_id: &str,
 	bearer_token: BearerToken,
 ) -> Result<Json<UserResponse>, status::Custom<Json<GenericResponse>>> {
-	unimplemented!()
+	let session = bearer_token.validate().await?;
+	let user = get_user_as_self_or_admin(user_id, session).await?;
+	Ok(Json(UserResponse::from_user(user).await?))
 }
-*/
 
 /// Registration Request
 #[derive(Deserialize, ToSchema)]
@@ -159,18 +133,20 @@ pub struct RegistrationRequest {
 	pub username: UniqueHandle<HandleDummy>,
 	pub display_name: DisplayName,
 	pub password: String,
+	pub email: EmailAddress,
 }
 
+/// Register User
 #[utoipa::path(
-    post,
-    path = "/v1/register_user",
-	description = "Register user",
-    request_body(content = RegistrationRequest, content_type = "application/json"),
-    responses(
-        (status = 200, description = "User registered and token granted", body = TokenResponse),
-        (status = 400, description = "Bad request", body = GenericResponse)
-    ),
-    tag = "auth"
+	post,
+	path = "/v1/register_user",
+	description = "Register a new User",
+	request_body(content = RegistrationRequest, content_type = "application/json"),
+	responses(
+		(status = 200, description = "User registered and token granted", body = TokenResponse),
+		(status = 400, description = "Bad request", body = GenericResponse)
+	),
+	tag = "auth"
 )]
 #[rocket::post("/v1/register_user", format = "json", data = "<registration>")]
 pub async fn register(
@@ -218,31 +194,35 @@ pub struct ChangePasswordRequest {
 }
 
 #[utoipa::path(
-    post,
-    path = "/v1/users/{id}/change_password",
+	post,
+	path = "/v1/users/{user_id}/change_password",
 	description = "Change password",
-    request_body(content = ChangePasswordRequest, content_type = "application/json"),
-    params(
-        ("id" = String, Path, description = "User ID")
-    ),
-    responses(
-        (status = 200, description = "Password changed", body = DummySuccess),
-        (status = 401, description = "Unauthorized", body = GenericResponse),
-        (status = 403, description = "Forbidden", body = GenericResponse)
-    ),
-    security(
-        ("bearerAuth" = [])
-    ),
-    tag = "user"
+	request_body(content = ChangePasswordRequest, content_type = "application/json"),
+	params(
+		("user_id" = String, Path, description = "User ID")
+	),
+	responses(
+		(status = 200, description = "Password changed", body = DummySuccess),
+		(status = 401, description = "Unauthorized", body = GenericResponse),
+		(status = 403, description = "Forbidden", body = GenericResponse)
+	),
+	security(
+		("bearerAuth" = [])
+	),
+	tag = "user"
 )]
-#[rocket::post("/v1/users/<id>/change_password", format = "json", data = "<request>")]
+#[rocket::post(
+	"/v1/users/<user_id>/change_password",
+	format = "json",
+	data = "<request>"
+)]
 pub async fn change_password(
-	id: &str,
+	user_id: &str,
 	request: Json<ChangePasswordRequest>,
 	bearer_token: BearerToken,
 ) -> Result<Json<GenericResponse>, status::Custom<Json<GenericResponse>>> {
 	let session = bearer_token.validate().await?;
-	let mut user = get_user_as_self_or_admin(id, session).await?;
+	let mut user = get_user_as_self_or_admin(user_id, session).await?;
 
 	if user.verify_password(&request.old_password).is_err() {
 		return Err(Error::new(Status::Unauthorized, "Invalid password", None).into());
@@ -266,33 +246,34 @@ pub struct UserRequest {
 	pub password: Option<String>,
 }
 
+/// Update User
 #[utoipa::path(
-    patch,
-    path = "/v1/users/{id}",
-	description = "Update user",
-    request_body(content = UserRequest, content_type = "application/json"),
-    params(
-        ("id" = String, Path, description = "User ID")
-    ),
-    responses(
-        (status = 200, description = "User updated", body = UserResponse),
-        (status = 400, description = "Bad request", body = GenericResponse),
-        (status = 401, description = "Unauthorized", body = GenericResponse),
-        (status = 403, description = "Forbidden", body = GenericResponse)
-    ),
-    security(
-        ("bearerAuth" = [])
-    ),
-    tag = "user"
+	patch,
+	path = "/v1/users/{user_id}",
+	description = "Update a User by ID",
+	request_body(content = UserRequest, content_type = "application/json"),
+	params(
+		("user_id" = String, Path, description = "User ID")
+	),
+	responses(
+		(status = 200, description = "User updated", body = UserResponse),
+		(status = 400, description = "Bad request", body = GenericResponse),
+		(status = 401, description = "Unauthorized", body = GenericResponse),
+		(status = 403, description = "Forbidden", body = GenericResponse)
+	),
+	security(
+		("bearerAuth" = [])
+	),
+	tag = "user"
 )]
-#[rocket::patch("/v1/users/<id>", format = "json", data = "<request>")]
+#[rocket::patch("/v1/users/<user_id>", format = "json", data = "<request>")]
 pub async fn update_user(
-	id: &str,
+	user_id: &str,
 	request: Json<UserRequest>,
 	bearer_token: BearerToken,
 ) -> Result<Json<UserResponse>, status::Custom<Json<GenericResponse>>> {
 	let session = bearer_token.validate().await?;
-	let mut user = get_user_as_self_or_admin(id, session).await?;
+	let mut user = get_user_as_self_or_admin(user_id, session).await?;
 	let mut updates = vec![];
 
 	if let Some(username) = &request.username {
@@ -311,8 +292,10 @@ pub async fn update_user(
 		if user.is_admin {
 			user.set_password(password).await?;
 		} else {
-			// Users change their own password with the change_password endpoint
-			return Err(Error::insufficient_permissions().into());
+			return Err(Error::bad_request(
+				"Users can only change their own password with the change_password endpoint",
+			)
+			.into());
 		}
 	}
 
@@ -326,30 +309,31 @@ pub async fn update_user(
 	Ok(Json(UserResponse::from_user(user).await?))
 }
 
+/// Delete User
 #[utoipa::path(
-    delete,
-    path = "/v1/users/{id}",
-    description = "Delete user",
-    params(
-        ("id" = String, Path, description = "User ID")
-    ),
-    responses(
-        (status = 200, description = "User deleted", body = DummySuccess),
-        (status = 401, description = "Unauthorized", body = GenericResponse),
-        (status = 403, description = "Forbidden", body = GenericResponse)
-    ),
-    security(
-        ("bearerAuth" = [])
-    ),
-    tag = "user"
+	delete,
+	path = "/v1/users/{user_id}",
+	description = "Delete a User by ID",
+	params(
+		("user_id" = String, Path, description = "User ID")
+	),
+	responses(
+		(status = 200, description = "User deleted", body = DummySuccess),
+		(status = 401, description = "Unauthorized", body = GenericResponse),
+		(status = 403, description = "Forbidden", body = GenericResponse)
+	),
+	security(
+		("bearerAuth" = [])
+	),
+	tag = "user"
 )]
-#[rocket::delete("/v1/users/<id>")]
+#[rocket::delete("/v1/users/<user_id>")]
 pub async fn delete_user(
-	id: &str,
+	user_id: &str,
 	bearer_token: BearerToken,
 ) -> Result<Json<GenericResponse>, status::Custom<Json<GenericResponse>>> {
 	let session = bearer_token.validate().await?;
-	let user = get_user_as_self_or_admin(id, session).await?;
+	let user = get_user_as_self_or_admin(user_id, session).await?;
 
 	user.db_delete(&surrealdb_client().await.map_err(Into::<Error>::into)?)
 		.await
@@ -358,20 +342,20 @@ pub async fn delete_user(
 	Ok(Json(GenericResponse::success()))
 }
 
-/// Get all users
+/// Get all Users
 #[utoipa::path(
-    get,
-    path = "/v1/users",
-    description = "Get all Users. Only available to admins.",
-    responses(
-        (status = 200, description = "List of users", body = [UserResponse]),
-        (status = 401, description = "Unauthorized", body = GenericResponse),
-        (status = 403, description = "Forbidden", body = GenericResponse)
-    ),
-    security(
-        ("bearerAuth" = [])
-    ),
-    tag = "user"
+	get,
+	path = "/v1/users",
+	description = "Get all Users. Only available to admins.",
+	responses(
+		(status = 200, description = "List of users", body = [UserResponse]),
+		(status = 401, description = "Unauthorized", body = GenericResponse),
+		(status = 403, description = "Forbidden", body = GenericResponse)
+	),
+	security(
+		("bearerAuth" = [])
+	),
+	tag = "user"
 )]
 #[rocket::get("/v1/users")]
 pub async fn get_users(

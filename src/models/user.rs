@@ -1,7 +1,9 @@
 use crate::generic::{
 	surrealdb_client, DisplayName, EmailAddress, HasHandle, PhoneNumber, UniqueHandle,
 };
+use crate::models::establishment::Establishment;
 use crate::models::image::Image;
+use crate::models::review::Review;
 use crate::models::staff::Staff;
 use crate::{
 	error::Error, generic::HashedString, models::session::Session,
@@ -11,6 +13,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use surreal_socket::cascade;
 use surreal_socket::dbrecord::{CascadeDelete, DBRecord, Expirable, SsUuid};
+use surreal_socket::error::SurrealSocketError;
 
 const PASSWORD_MIN_LENGTH: usize = 8;
 
@@ -64,7 +67,16 @@ impl DBRecord for User {
 	}
 
 	fn cascade_delete() -> Vec<CascadeDelete> {
-		vec![cascade!(Session, "user"), cascade!(Staff, "user")]
+		vec![
+			cascade!(Session, "user"),
+			cascade!(Staff, "user"),
+			cascade!(Review, "user"),
+		]
+	}
+
+	async fn post_create_hook(&self) -> Result<(), SurrealSocketError> {
+		log::info!("User created: {}", self.username);
+		Ok(())
 	}
 }
 
@@ -75,6 +87,7 @@ impl User {
 	///
 	/// Default values are specified here.
 	pub async fn register(registration_request: &RegistrationRequest) -> Result<Self, Error> {
+		registration_request.email.validate()?;
 		registration_request.display_name.validate()?;
 		let username = UniqueHandle::new(&registration_request.username.to_string()).await?;
 
@@ -92,6 +105,7 @@ impl User {
 			username,
 			display_name: registration_request.display_name.clone(),
 			password_hash: HashedString::new(&registration_request.password)?,
+			email: registration_request.email.clone(),
 			..Default::default()
 		};
 
@@ -158,5 +172,23 @@ impl User {
 	pub async fn get_staff(&self) -> Result<Vec<Staff>, Error> {
 		let client = surrealdb_client().await?;
 		Ok(Staff::db_search(&client, "user", self.uuid.to_string()).await?)
+	}
+
+	pub async fn staff_at(
+		&self,
+		establishment_id: &SsUuid<Establishment>,
+	) -> Result<Option<Staff>, Error> {
+		let client = surrealdb_client().await?;
+
+		let staff =
+			Staff::db_search_one(&client, "establishment", establishment_id.to_string()).await?;
+
+		if let Some(staff) = staff {
+			if staff.user == self.uuid {
+				return Ok(Some(staff));
+			}
+		}
+
+		Ok(None)
 	}
 }

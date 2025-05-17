@@ -31,19 +31,19 @@ pub async fn token_form(
 }
 
 #[utoipa::path(
-    post,
-    path = "/v1/auth/token",
+	post,
+	path = "/v1/auth/token",
 	description = "OAuth2 token",
-    request_body(
-        content = TokenRequest,
-        content_type = "application/json"
-    ),
-    responses(
-        (status = 200, description = "Token granted", body = TokenResponse),
-        (status = 400, description = "Bad request", body = GenericResponse),
-        (status = 401, description = "Unauthorized", body = GenericResponse)
-    ),
-    tag = "auth"
+	request_body(
+		content = TokenRequest,
+		content_type = "application/json"
+	),
+	responses(
+		(status = 200, description = "Token granted", body = TokenResponse),
+		(status = 400, description = "Bad request", body = GenericResponse),
+		(status = 401, description = "Unauthorized", body = GenericResponse)
+	),
+	tag = "auth"
 )]
 #[post(
 	"/v1/auth/token",

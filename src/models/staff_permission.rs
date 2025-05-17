@@ -1,4 +1,4 @@
-use crate::models::staff::Staff;
+use crate::{error::Error, generic::surrealdb_client, models::staff::Staff};
 use rocket::async_trait;
 use serde::{Deserialize, Serialize};
 use surreal_socket::dbrecord::{DBRecord, SsUuid};
@@ -20,8 +20,24 @@ impl DBRecord for StaffPermission {
 	}
 }
 
-#[derive(Serialize, Deserialize, ToSchema, PartialEq)]
+#[derive(Serialize, Deserialize, ToSchema, PartialEq, Clone)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum StaffPermissionKind {
 	Admin,
+}
+
+impl StaffPermission {
+	pub fn new(staff: &SsUuid<Staff>, kind: StaffPermissionKind) -> Self {
+		Self {
+			uuid: SsUuid::new(),
+			staff: staff.clone(),
+			kind,
+		}
+	}
+
+	pub async fn get_belonging_to(staff: &SsUuid<Staff>) -> Result<Vec<StaffPermission>, Error> {
+		let client = surrealdb_client().await.unwrap();
+		let permissions = StaffPermission::db_search(&client, "staff", staff.uuid_string()).await?;
+		Ok(permissions)
+	}
 }
