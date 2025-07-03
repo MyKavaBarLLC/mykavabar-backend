@@ -4,17 +4,17 @@ use crate::routes::openapi::DummySuccess;
 use rocket::{get, http::Status, response::status, serde::json::Json};
 
 #[utoipa::path(
-    get,
-    path = "/v1/auth/check_token",
-    description = "Check whether the provided Bearer token is valid",
-    responses(
-        (status = 200, description = "Token valid", body = DummySuccess),
-        (status = 401, description = "Unauthorized", body = GenericResponse),
-    ),
-    security(
-        ("bearerAuth" = [])
-    ),
-    tag = "auth"
+	get,
+	path = "/v1/auth/check_token",
+	description = "Check whether the provided Bearer token is valid",
+	responses(
+		(status = 200, description = "Token valid", body = DummySuccess),
+		(status = 401, description = "Unauthorized", body = GenericResponse),
+	),
+	security(
+		("bearerAuth" = [])
+	),
+	tag = "auth"
 )]
 #[get("/v1/auth/check_token")]
 /// Test Bearer token

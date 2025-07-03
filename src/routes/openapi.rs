@@ -10,6 +10,8 @@ use crate::routes::establishment::EstablishmentRequest;
 use crate::routes::establishment::EstablishmentSearchRequest;
 use crate::routes::establishment::ReviewDto;
 use crate::routes::establishment::__path_add_establishment_review;
+use crate::routes::establishment::__path_check_in;
+use crate::routes::establishment::__path_check_out;
 use crate::routes::establishment::__path_create_establishment;
 use crate::routes::establishment::__path_delete_establishment;
 use crate::routes::establishment::__path_delete_establishment_review;
@@ -47,7 +49,7 @@ use utoipa_rapidoc::RapiDoc;
 		title = "MyKavaBar API",
 		description = "https://github.com/MyKavaBarLLC/mykavabar-backend"
 	),
-	paths(token_json, register, change_password, update_user, delete_user, get_user, get_users, bootstrap_admin_route, check_token, get_establishment, create_establishment, search_establishments_route, update_establishment, delete_establishment, update_establishment_staff, delete_establishment_staff, add_establishment_review, update_establishment_review, delete_establishment_review),
+	paths(token_json, register, change_password, update_user, delete_user, get_user, get_users, bootstrap_admin_route, check_token, get_establishment, create_establishment, search_establishments_route, update_establishment, delete_establishment, update_establishment_staff, delete_establishment_staff, add_establishment_review, update_establishment_review, delete_establishment_review, check_in, check_out),
 	components(schemas(DisplayName, UniqueHandle<HandleDummy>, TokenRequest, TokenResponse, GenericResponse, RegistrationRequest, ChangePasswordRequest, UserRequest, UserResponse, BootstrapAdminRequest, EstablishmentSearchRequest, EstablishmentCard, EstablishmentRequest, DummySuccess, ReviewDto)),
 	tags((name = "auth", description = "OAuth 2.0 Authentication"),
 		(name = "user", description = "User management endpoints. Use `me` in place of user ID to refer to the authenticated user"),

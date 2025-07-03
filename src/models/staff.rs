@@ -1,7 +1,11 @@
 use crate::error::Error;
+use crate::models::establishment::{TimePeriod, MINUTES_IN_DAY};
 use crate::models::staff_permission::{StaffPermission, StaffPermissionKind};
+use crate::models::staff_schedule_entry::StaffScheduleEntry;
 use crate::models::user::User;
 use crate::{generic::surrealdb_client, models::establishment::Establishment};
+use chrono::NaiveDate;
+use chrono::Timelike;
 use rocket::async_trait;
 use serde::{Deserialize, Serialize};
 use surreal_socket::cascade;
@@ -13,8 +17,8 @@ use surreal_socket::{
 
 #[derive(Serialize, Deserialize, Default)]
 pub struct Staff {
-	pub user: SsUuid<User>,
 	pub uuid: SsUuid<Staff>,
+	pub user: SsUuid<User>,
 	pub establishment: SsUuid<Establishment>,
 }
 
@@ -121,5 +125,115 @@ impl Staff {
 	pub async fn has_permission(&self, permission: StaffPermissionKind) -> Result<bool, Error> {
 		let permissions = self.get_permissions().await?;
 		Ok(permissions.contains(&permission))
+	}
+
+	pub async fn current_schedule_entry(&self) -> Result<Option<StaffScheduleEntry>, Error> {
+		let now = chrono::Utc::now().date_naive();
+		self.get_schedule_entry(now).await
+	}
+
+	pub async fn current_shift(&self) -> Result<Option<TimePeriod>, Error> {
+		let mut schedule_entries = vec![];
+		let now = chrono::Utc::now();
+
+		// Today and yesterday (Since yesterday's shifts could be ongoing)
+		for i in 0..2 {
+			let date = now
+				.checked_sub_signed(chrono::Duration::days(i))
+				.ok_or_else(|| Error::generic_500("Date out of range"))?
+				.date_naive();
+
+			if let Some(entry) = self.get_schedule_entry(date).await? {
+				schedule_entries.push(entry);
+			}
+		}
+
+		let current_minute = (now.time().num_seconds_from_midnight() / 60) as u16;
+
+		for schedule_entry in schedule_entries {
+			for shift in schedule_entry.shifts {
+				let (begin, end) = if shift.end() > MINUTES_IN_DAY {
+					(0, shift.end() - MINUTES_IN_DAY)
+				} else {
+					(shift.start(), shift.end())
+				};
+
+				if begin <= current_minute && current_minute <= end {
+					return Ok(Some(shift));
+				}
+			}
+		}
+
+		Ok(None)
+	}
+
+	pub async fn working_until(&self) -> Result<Option<u16>, Error> {
+		Ok(self.current_shift().await?.map(|period| period.end()))
+	}
+
+	pub async fn get_schedule_entry(
+		&self,
+		date: NaiveDate,
+	) -> Result<Option<StaffScheduleEntry>, Error> {
+		let client = surrealdb_client().await?;
+
+		let query = format!(
+			"SELECT * FROM {} WHERE date = $date AND staff = $staff;",
+			StaffScheduleEntry::table()
+		);
+
+		let entry: Vec<StaffScheduleEntry> = client
+			.query(query)
+			.bind(("date", date))
+			.bind(("staff", self.uuid.to_string()))
+			.await?
+			.take(0)?;
+
+		if entry.is_empty() {
+			return Ok(None);
+		}
+
+		if entry.len() > 1 {
+			return Err(Error::generic_500(&format!(
+				"Illegal state: Multiple schedule entries found for staff {} on date {}.",
+				self.uuid, date
+			)));
+		}
+
+		Ok(Some(entry[0].clone()))
+	}
+
+	pub async fn check_in(&self, start: u16, end: u16) -> Result<(), Error> {
+		let period = TimePeriod::new(start, end)?;
+
+		let mut schedule = match self.current_schedule_entry().await? {
+			Some(schedule) => schedule,
+			None => StaffScheduleEntry::new(chrono::Utc::now().date_naive()),
+		};
+
+		schedule.add_shift(period)?;
+		let client = surrealdb_client().await?;
+		schedule.db_overwrite(&client).await?;
+		Ok(())
+	}
+
+	pub async fn check_out(&self, minute: u16) -> Result<(), Error> {
+		let mut schedule = match self.current_schedule_entry().await? {
+			Some(schedule) => schedule,
+			None => return Err(Error::generic_500("No current schedule entry found.")),
+		};
+
+		if let Some(shift_index) = schedule
+			.shifts
+			.iter()
+			.position(|shift| shift.start() <= minute && minute <= shift.end())
+		{
+			schedule.shifts.remove(shift_index);
+			let client = surrealdb_client().await?;
+			schedule.db_overwrite(&client).await?;
+			Ok(())
+		} else {
+			Err(Error::generic_500("No shift found for the given time."))
+		}
 	}
 }

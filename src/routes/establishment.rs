@@ -12,6 +12,7 @@ use crate::models::review::ReviewContext;
 use crate::models::review::ReviewRating;
 use crate::models::staff_permission::StaffPermissionKind;
 use crate::models::user::User;
+use crate::routes::openapi::DummySuccess;
 use crate::routes::openapi::HandleDummy;
 use crate::{
 	error::Error,
@@ -89,7 +90,6 @@ pub struct EstablishmentResponse {
 impl EstablishmentResponse {
 	pub async fn from_establishment(establishment: Establishment) -> Result<Self, Error> {
 		let staff = establishment.get_staff().await?;
-
 		let mut staff_response = Vec::with_capacity(staff.len());
 
 		for staff in staff {
@@ -100,6 +100,7 @@ impl EstablishmentResponse {
 				display_name: user.display_name,
 				handle: user.username,
 				permissions: staff.get_permissions().await?,
+				working_until: staff.working_until().await?,
 			});
 		}
 
@@ -146,6 +147,8 @@ pub struct EstablishmentStaffResponse {
 	#[schema(value_type = String)]
 	pub handle: UniqueHandle<User>,
 	pub permissions: Vec<StaffPermissionKind>,
+	/// Null if the Staff is not currently checked in.
+	pub working_until: Option<u16>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -565,6 +568,7 @@ pub async fn update_establishment_staff(
 		display_name: staff_user.display_name,
 		handle: staff_user.username,
 		permissions: staff.get_permissions().await?,
+		working_until: staff.working_until().await?,
 	}))
 }
 
@@ -631,6 +635,7 @@ pub async fn delete_establishment_staff(
 		display_name: staff_user.display_name,
 		handle: staff_user.username,
 		permissions: staff.get_permissions().await?,
+		working_until: staff.working_until().await?,
 	};
 
 	staff
@@ -828,4 +833,148 @@ pub async fn delete_establishment_review(
 	}
 
 	Err(Error::bad_request("User has not reviewed this establishment").into())
+}
+
+/// Check-in Request
+#[derive(Deserialize, ToSchema)]
+pub struct CheckinRequest {
+	/// Start time of the working shift in minutes since midnight (UTC).
+	///
+	/// For quick check-ins, this can be set to the current time.
+	/// The frontend should set this on page load to avoid bugs when the page is loaded just before midnight.
+	start: u16,
+
+	/// In minutes since midnight (UTC). Can be over 1440 if working until after midnight.
+	end: u16,
+
+	/// Optional User ID to check in. If not provided, the requesting User is checked in.
+	user_id: Option<String>,
+}
+
+/// Staff Check in
+#[utoipa::path(
+	post,
+	path = "/v1/establishments/{establishment_id}/checkin",
+	params(
+		("establishment_id" = String, Path, description = "Establishment ID"),
+	),
+	description = "Check in the requesting User if they are a Staff of the Establishment",
+	request_body(content = CheckinRequest, content_type = "application/json"),
+	responses(
+		(status = 200, description = "OK", body = DummySuccess),
+		(status = 401, description = "Unauthorized", body = GenericResponse),
+		(status = 403, description = "Forbidden", body = GenericResponse)
+	),
+	security(
+		("bearerAuth" = [])
+	),
+	tag = "establishment"
+)]
+#[rocket::post("/v1/establishments/<establishment_id>/checkin", data = "<request>")]
+pub async fn check_in(
+	request: Json<CheckinRequest>,
+	establishment_id: &str,
+	bearer_token: BearerToken,
+) -> Result<Json<GenericResponse>, status::Custom<Json<GenericResponse>>> {
+	let establishment_id: SsUuid<Establishment> =
+		SsUuid::from_str(establishment_id).map_err(Into::<Error>::into)?;
+
+	let requester = bearer_token.validate().await?.user().await?;
+
+	let user = if let Some(user_id) = &request.user_id {
+		if let Some(staff) = requester.staff_at(&establishment_id).await? {
+			if !staff.has_permission(StaffPermissionKind::Admin).await? {
+				return Err(Error::insufficient_permissions().into());
+			}
+		} else {
+			return Err(
+				Error::not_found("Requesting User is not Staff at this Establishment").into(),
+			);
+		}
+
+		let client = surrealdb_client().await.map_err(Into::<Error>::into)?;
+
+		User::db_by_id(&client, user_id)
+			.await
+			.map_err(Into::<Error>::into)?
+			.ok_or_else(|| Error::not_found("User not found"))?
+	} else {
+		requester
+	};
+
+	let staff = match user.staff_at(&establishment_id).await? {
+		Some(staff) => staff,
+		None => return Err(Error::not_found("User is not Staff at this Establishment").into()),
+	};
+
+	staff.check_in(request.start, request.end).await?;
+	Ok(Json(GenericResponse::success()))
+}
+
+/// Check-out Request
+#[derive(Deserialize, ToSchema)]
+pub struct CheckoutRequest {
+	/// Time in minutes since midnight of any minute within the shift, inclusive of start/end times (UTC).
+	time: u16,
+	user_id: Option<String>,
+}
+
+/// Staff Check out
+#[utoipa::path(
+	post,
+	path = "/v1/establishments/{establishment_id}/checkout",
+	params(
+		("establishment_id" = String, Path, description = "Establishment ID"),
+	),
+	description = "Check out the requesting User if they are a Staff of the Establishment",
+	request_body(content = CheckoutRequest, content_type = "application/json"),
+	responses(
+		(status = 200, description = "OK", body = DummySuccess),
+		(status = 401, description = "Unauthorized", body = GenericResponse),
+		(status = 403, description = "Forbidden", body = GenericResponse)
+	),
+	security(
+		("bearerAuth" = [])
+	),
+	tag = "establishment"
+)]
+#[rocket::post("/v1/establishments/<establishment_id>/checkout", data = "<request>")]
+pub async fn check_out(
+	request: Json<CheckoutRequest>,
+	establishment_id: &str,
+	bearer_token: BearerToken,
+) -> Result<Json<GenericResponse>, status::Custom<Json<GenericResponse>>> {
+	let establishment_id: SsUuid<Establishment> =
+		SsUuid::from_str(establishment_id).map_err(Into::<Error>::into)?;
+
+	let requester = bearer_token.validate().await?.user().await?;
+
+	let user = if let Some(user_id) = &request.user_id {
+		if let Some(staff) = requester.staff_at(&establishment_id).await? {
+			if !staff.has_permission(StaffPermissionKind::Admin).await? {
+				return Err(Error::insufficient_permissions().into());
+			}
+		} else {
+			return Err(
+				Error::not_found("Requesting User is not Staff at this Establishment").into(),
+			);
+		}
+
+		let client = surrealdb_client().await.map_err(Into::<Error>::into)?;
+
+		User::db_by_id(&client, user_id)
+			.await
+			.map_err(Into::<Error>::into)?
+			.ok_or_else(|| Error::not_found("User not found"))?
+	} else {
+		requester
+	};
+
+	let staff = match user.staff_at(&establishment_id).await? {
+		Some(staff) => staff,
+		None => return Err(Error::not_found("User is not Staff at this Establishment").into()),
+	};
+
+	staff.check_out(request.time).await?;
+	Ok(Json(GenericResponse::success()))
 }

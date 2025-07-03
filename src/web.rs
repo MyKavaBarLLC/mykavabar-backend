@@ -70,6 +70,8 @@ pub async fn start_web(bound_port: BoundPort) {
 				routes::establishment::add_establishment_review,
 				routes::establishment::update_establishment_review,
 				routes::establishment::delete_establishment_review,
+				routes::establishment::check_in,
+				routes::establishment::check_out,
 			],
 		)
 		.register(

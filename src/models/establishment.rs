@@ -15,7 +15,7 @@ use surreal_socket::{
 };
 use utoipa::ToSchema;
 
-const MINUTES_IN_DAY: u16 = 1440;
+pub const MINUTES_IN_DAY: u16 = 1440;
 
 #[derive(Serialize, Deserialize, Default)]
 pub struct Establishment {
@@ -216,7 +216,7 @@ impl Schedule {
 			for period in day {
 				period.validate()?;
 
-				if period.begin < minute {
+				if period.start < minute {
 					return Err(Error::bad_request(
 						"Time periods must be in ascending order and non-overlapping",
 					));
@@ -230,12 +230,12 @@ impl Schedule {
 	}
 }
 
-/// A time period in minutes since midnight.
+/// A time period in minutes since midnight (UTC).
 #[derive(Serialize, Deserialize, ToSchema, Default, Clone)]
 pub struct TimePeriod {
 	/// 0 to 1439. Must be less than `end`.
 	#[schema(maximum = 1439)]
-	begin: u16,
+	start: u16,
 	/// Can be over 1440 if the period extends until after midnight.
 	#[schema(maximum = 2879)]
 	end: u16,
@@ -243,17 +243,25 @@ pub struct TimePeriod {
 
 impl TimePeriod {
 	pub fn new(begin: u16, end: u16) -> Result<Self, Error> {
-		let period = Self { begin, end };
+		let period = Self { start: begin, end };
 		period.validate()?;
 		Ok(period)
 	}
 
 	pub fn validate(&self) -> Result<(), Error> {
-		if self.begin >= MINUTES_IN_DAY || self.end >= MINUTES_IN_DAY * 2 || self.begin > self.end {
+		if self.start >= MINUTES_IN_DAY || self.end >= MINUTES_IN_DAY * 2 || self.start > self.end {
 			return Err(Error::bad_request("Invalid time period"));
 		}
 
 		Ok(())
+	}
+
+	pub fn start(&self) -> u16 {
+		self.start
+	}
+
+	pub fn end(&self) -> u16 {
+		self.end
 	}
 }
 

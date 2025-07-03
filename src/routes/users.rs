@@ -76,19 +76,23 @@ impl UserResponseStaffRole {
 	pub async fn from_staff(staff: Staff) -> Result<Self, Error> {
 		let client = surrealdb_client().await?;
 
-		let establishment =
-			match Establishment::db_by_id(&client, &staff.establishment.uuid_string()).await? {
-				Some(establishment) => establishment,
-				None => {
-					staff.db_delete(&client).await?;
+		let establishment = match Establishment::db_by_id(
+			&client,
+			&staff.establishment.uuid_string(),
+		)
+		.await?
+		{
+			Some(establishment) => establishment,
+			None => {
+				staff.db_delete(&client).await?;
 
-					return Err(Error::generic_500(&format!(
+				return Err(Error::generic_500(&format!(
 						"Illegal state: Staff {} linked to non-existent establishment: {}. Staff deleted.",
 						staff.uuid,
 						staff.establishment
 					)));
-				}
-			};
+			}
+		};
 
 		Ok(Self {
 			establishment: EstablishmentCard::from(establishment),
