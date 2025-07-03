@@ -1,7 +1,7 @@
 use crate::{
-	error::Error,
-	generic::{surrealdb_client, Environment, HashedString, JwtClaims},
-	models::user::User,
+    error::Error,
+    generic::{surrealdb_client, Environment, HashedString, JwtClaims},
+    models::user::User,
 };
 use chrono::{DateTime, Utc};
 use rocket::http::Status;
@@ -14,127 +14,127 @@ pub const REFRESH_TOKEN_EXPIRY_SECONDS: u64 = 60 * 60 * 24 * 30; // 30 days
 
 #[derive(Serialize, Deserialize)]
 pub struct Session {
-	pub uuid: SsUuid<Session>,
-	user: SsUuid<User>,
-	pub refresh_token_hash: HashedString,
-	pub refresh_token_issued_at: DateTime<Utc>,
+    pub uuid: SsUuid<Session>,
+    user: SsUuid<User>,
+    pub refresh_token_hash: HashedString,
+    pub refresh_token_issued_at: DateTime<Utc>,
 }
 
 impl DBRecord for Session {
-	const TABLE_NAME: &'static str = "sessions";
+    const TABLE_NAME: &'static str = "sessions";
 
-	fn uuid(&self) -> SsUuid<Self> {
-		self.uuid.to_owned()
-	}
+    fn uuid(&self) -> SsUuid<Self> {
+        self.uuid.to_owned()
+    }
 }
 
 impl Session {
-	/// Create a new Session, without persisting it to the database.
-	pub fn new(user: &SsUuid<User>) -> Result<Self, Error> {
-		Ok(Self {
-			uuid: SsUuid::new(),
-			user: user.to_owned(),
-			refresh_token_hash: HashedString::new(&Uuid::new_v4().to_string())?,
-			refresh_token_issued_at: Utc::now(),
-		})
-	}
+    /// Create a new Session, without persisting it to the database.
+    pub fn new(user: &SsUuid<User>) -> Result<Self, Error> {
+        Ok(Self {
+            uuid: SsUuid::new(),
+            user: user.to_owned(),
+            refresh_token_hash: HashedString::new(&Uuid::new_v4().to_string())?,
+            refresh_token_issued_at: Utc::now(),
+        })
+    }
 
-	/// Verify the access token and return the Session associated with it.
-	pub async fn from_access_token(access_token: &str) -> Result<Self, Error> {
-		let env = Environment::new();
-		let secret = env.oauth_jwt_secret.val();
-		let decoding_key = jsonwebtoken::DecodingKey::from_secret(secret.as_ref());
+    /// Verify the access token and return the Session associated with it.
+    pub async fn from_access_token(access_token: &str) -> Result<Self, Error> {
+        let env = Environment::new();
+        let secret = env.oauth_jwt_secret.val();
+        let decoding_key = jsonwebtoken::DecodingKey::from_secret(secret.as_ref());
 
-		let mut validation = jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::HS256);
-		validation.set_audience(&[format!("{}-session", env.domain.val())]);
-		validation.set_issuer(&[env.domain.val()]);
+        let mut validation = jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::HS256);
+        validation.set_audience(&[format!("{}-session", env.domain.val())]);
+        validation.set_issuer(&[env.domain.val()]);
 
-		let token_data =
-			jsonwebtoken::decode::<JwtClaims>(access_token, &decoding_key, &validation)
-				.map_err(|_| Error::generic_401())?;
-		// note: decode() also checks expiration
+        let token_data =
+            jsonwebtoken::decode::<JwtClaims>(access_token, &decoding_key, &validation)
+                .map_err(|_| Error::generic_401())?;
+        // note: decode() also checks expiration
 
-		let session: Session = Self::db_by_id(&surrealdb_client().await?, &token_data.claims.sub)
-			.await?
-			.ok_or(Error::generic_401())?;
+        let session: Session = Self::db_by_id(&surrealdb_client().await?, &token_data.claims.sub)
+            .await?
+            .ok_or(Error::generic_401())?;
 
-		Ok(session)
-	}
+        Ok(session)
+    }
 
-	/// Generate a new refresh token for the session, updating the database and invalidating the previous one.
-	pub async fn rotate_refresh_token(&mut self) -> Result<String, Error> {
-		let refresh_token = Uuid::new_v4().to_raw();
+    /// Generate a new refresh token for the session, updating the database and invalidating the previous one.
+    pub async fn rotate_refresh_token(&mut self) -> Result<String, Error> {
+        let refresh_token = Uuid::new_v4().to_raw();
 
-		self.refresh_token_hash = HashedString::new(&refresh_token)?;
-		self.refresh_token_issued_at = Utc::now();
+        self.refresh_token_hash = HashedString::new(&refresh_token)?;
+        self.refresh_token_issued_at = Utc::now();
 
-		self.db_update_fields(
-			&surrealdb_client().await?,
-			vec![
-				(
-					"refresh_token_hash",
-					&serde_json::to_value(&self.refresh_token_hash)?,
-				),
-				(
-					"refresh_token_issued_at",
-					&serde_json::to_value(self.refresh_token_issued_at)?,
-				),
-			],
-		)
-		.await?;
+        self.db_update_fields(
+            &surrealdb_client().await?,
+            vec![
+                (
+                    "refresh_token_hash",
+                    &serde_json::to_value(&self.refresh_token_hash)?,
+                ),
+                (
+                    "refresh_token_issued_at",
+                    &serde_json::to_value(self.refresh_token_issued_at)?,
+                ),
+            ],
+        )
+        .await?;
 
-		Ok(refresh_token)
-	}
+        Ok(refresh_token)
+    }
 
-	/// Generate a new access token for the session.
-	///
-	/// This method does not update the database,
-	/// as the token is a stateless JWT.
-	pub fn generate_access_token(&self) -> Result<String, Error> {
-		let now = chrono::Utc::now().timestamp() as u64;
-		let env = Environment::new();
-		let domain = env.domain.val();
+    /// Generate a new access token for the session.
+    ///
+    /// This method does not update the database,
+    /// as the token is a stateless JWT.
+    pub fn generate_access_token(&self) -> Result<String, Error> {
+        let now = chrono::Utc::now().timestamp() as u64;
+        let env = Environment::new();
+        let domain = env.domain.val();
 
-		let claims = JwtClaims {
-			sub: self.uuid.uuid_string(),
-			exp: now + ACCESS_TOKEN_EXPIRY_SECONDS,
-			iat: now,
-			iss: domain.to_owned(),
-			aud: format!("{}-session", domain),
-		};
+        let claims = JwtClaims {
+            sub: self.uuid.uuid_string(),
+            exp: now + ACCESS_TOKEN_EXPIRY_SECONDS,
+            iat: now,
+            iss: domain.to_owned(),
+            aud: format!("{}-session", domain),
+        };
 
-		let secret = env.oauth_jwt_secret.val();
-		let encoding_key = jsonwebtoken::EncodingKey::from_secret(secret.as_ref());
+        let secret = env.oauth_jwt_secret.val();
+        let encoding_key = jsonwebtoken::EncodingKey::from_secret(secret.as_ref());
 
-		jsonwebtoken::encode(
-			&jsonwebtoken::Header::new(jsonwebtoken::Algorithm::HS256),
-			&claims,
-			&encoding_key,
-		)
-		.map_err(|e| Error::generic_500(&format!("Error encoding new JWT: {:?}", e)))
-	}
+        jsonwebtoken::encode(
+            &jsonwebtoken::Header::new(jsonwebtoken::Algorithm::HS256),
+            &claims,
+            &encoding_key,
+        )
+        .map_err(|e| Error::generic_500(&format!("Error encoding new JWT: {:?}", e)))
+    }
 
-	pub async fn user(&self) -> Result<User, Error> {
-		self.user
-			.object_opt(&surrealdb_client().await?)
-			.await?
-			.ok_or_else(|| Error::new(Status::Unauthorized, "Session user not found", None))
-	}
+    pub async fn user(&self) -> Result<User, Error> {
+        self.user
+            .object_opt(&surrealdb_client().await?)
+            .await?
+            .ok_or_else(|| Error::new(Status::Unauthorized, "Session user not found", None))
+    }
 
-	/// Wrapper for `clear_expired` with internal client,
-	/// needed for use in `jobs.rs` (can't pass args to job fns).
-	pub async fn clear_expired_sessions() -> Result<(), Error> {
-		Self::clear_expired(&surrealdb_client().await?).await?;
-		Ok(())
-	}
+    /// Wrapper for `clear_expired` with internal client,
+    /// needed for use in `jobs.rs` (can't pass args to job fns).
+    pub async fn clear_expired_sessions() -> Result<(), Error> {
+        Self::clear_expired(&surrealdb_client().await?).await?;
+        Ok(())
+    }
 }
 
 impl Expirable for Session {
-	fn start_time_field() -> &'static str {
-		"refresh_token_issued_at"
-	}
+    fn start_time_field() -> &'static str {
+        "refresh_token_issued_at"
+    }
 
-	fn expiry_seconds() -> u64 {
-		REFRESH_TOKEN_EXPIRY_SECONDS
-	}
+    fn expiry_seconds() -> u64 {
+        REFRESH_TOKEN_EXPIRY_SECONDS
+    }
 }

@@ -45,74 +45,74 @@ use utoipa_rapidoc::RapiDoc;
 
 #[derive(OpenApi)]
 #[openapi(
-	info(
-		title = "MyKavaBar API",
-		description = "https://github.com/MyKavaBarLLC/mykavabar-backend"
-	),
-	paths(token_json, register, change_password, update_user, delete_user, get_user, get_users, bootstrap_admin_route, check_token, get_establishment, create_establishment, search_establishments_route, update_establishment, delete_establishment, update_establishment_staff, delete_establishment_staff, add_establishment_review, update_establishment_review, delete_establishment_review, check_in, check_out),
-	components(schemas(DisplayName, UniqueHandle<HandleDummy>, TokenRequest, TokenResponse, GenericResponse, RegistrationRequest, ChangePasswordRequest, UserRequest, UserResponse, BootstrapAdminRequest, EstablishmentSearchRequest, EstablishmentCard, EstablishmentRequest, DummySuccess, ReviewDto)),
-	tags((name = "auth", description = "OAuth 2.0 Authentication"),
-		(name = "user", description = "User management endpoints. Use `me` in place of user ID to refer to the authenticated user"),
-		(name = "establishment", description = "Establishment management endpoints")
-	),
-	security(
-		("bearerAuth" = [])
-	),
-	modifiers(&BearerTokenSecurity)
+    info(
+        title = "MyKavaBar API",
+        description = "https://github.com/MyKavaBarLLC/mykavabar-backend"
+    ),
+    paths(token_json, register, change_password, update_user, delete_user, get_user, get_users, bootstrap_admin_route, check_token, get_establishment, create_establishment, search_establishments_route, update_establishment, delete_establishment, update_establishment_staff, delete_establishment_staff, add_establishment_review, update_establishment_review, delete_establishment_review, check_in, check_out),
+    components(schemas(DisplayName, UniqueHandle<HandleDummy>, TokenRequest, TokenResponse, GenericResponse, RegistrationRequest, ChangePasswordRequest, UserRequest, UserResponse, BootstrapAdminRequest, EstablishmentSearchRequest, EstablishmentCard, EstablishmentRequest, DummySuccess, ReviewDto)),
+    tags((name = "auth", description = "OAuth 2.0 Authentication"),
+        (name = "user", description = "User management endpoints. Use `me` in place of user ID to refer to the authenticated user"),
+        (name = "establishment", description = "Establishment management endpoints")
+    ),
+    security(
+        ("bearerAuth" = [])
+    ),
+    modifiers(&BearerTokenSecurity)
 )]
 pub struct ApiDoc;
 
 #[get("/v1/openapi.json")]
 pub fn openapi_route() -> Json<utoipa::openapi::OpenApi> {
-	Json(ApiDoc::openapi())
+    Json(ApiDoc::openapi())
 }
 
 #[get("/v1/rapidoc")]
 pub fn rapidoc() -> RawHtml<String> {
-	RawHtml(RapiDoc::new("/v1/openapi.json").to_html())
+    RawHtml(RapiDoc::new("/v1/openapi.json").to_html())
 }
 
 pub struct BearerTokenSecurity;
 
 impl Modify for BearerTokenSecurity {
-	fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
-		let components = openapi.components.get_or_insert_with(Default::default);
+    fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
+        let components = openapi.components.get_or_insert_with(Default::default);
 
-		components.add_security_scheme(
-			"bearerAuth",
-			SecurityScheme::Http(
-				HttpBuilder::new()
-					.scheme(HttpAuthScheme::Bearer)
-					.bearer_format("JWT")
-					.build(),
-			),
-		);
-	}
+        components.add_security_scheme(
+            "bearerAuth",
+            SecurityScheme::Http(
+                HttpBuilder::new()
+                    .scheme(HttpAuthScheme::Bearer)
+                    .bearer_format("JWT")
+                    .build(),
+            ),
+        );
+    }
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]
 pub struct HandleDummy;
 
 impl DBRecord for HandleDummy {
-	const TABLE_NAME: &'static str = unimplemented!();
+    const TABLE_NAME: &'static str = unimplemented!();
 
-	fn uuid(&self) -> surreal_socket::dbrecord::SsUuid<Self> {
-		unimplemented!()
-	}
+    fn uuid(&self) -> surreal_socket::dbrecord::SsUuid<Self> {
+        unimplemented!()
+    }
 }
 
 impl HasHandle for HandleDummy {
-	fn handle_field() -> &'static str {
-		unimplemented!()
-	}
+    fn handle_field() -> &'static str {
+        unimplemented!()
+    }
 }
 
 // Use as the doc component for successful responses because
 // GenericResponse uses false as the example `success` value
 #[derive(Serialize, Deserialize, ToSchema)]
 pub struct DummySuccess {
-	#[schema(example = true)]
-	success: bool,
-	#[schema(example = json!(null))]
-	error: Option<String>,
+    #[schema(example = true)]
+    success: bool,
+    #[schema(example = json!(null))]
+    error: Option<String>,
 }

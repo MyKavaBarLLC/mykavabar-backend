@@ -6,38 +6,38 @@ use utoipa::ToSchema;
 
 #[derive(Serialize, Deserialize)]
 pub struct StaffPermission {
-	pub uuid: SsUuid<StaffPermission>,
-	pub staff: SsUuid<Staff>,
-	pub kind: StaffPermissionKind,
+    pub uuid: SsUuid<StaffPermission>,
+    pub staff: SsUuid<Staff>,
+    pub kind: StaffPermissionKind,
 }
 
 #[async_trait]
 impl DBRecord for StaffPermission {
-	const TABLE_NAME: &'static str = "staff_permissions";
+    const TABLE_NAME: &'static str = "staff_permissions";
 
-	fn uuid(&self) -> SsUuid<Self> {
-		self.uuid.to_owned()
-	}
+    fn uuid(&self) -> SsUuid<Self> {
+        self.uuid.to_owned()
+    }
 }
 
 #[derive(Serialize, Deserialize, ToSchema, PartialEq, Clone)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum StaffPermissionKind {
-	Admin,
+    Admin,
 }
 
 impl StaffPermission {
-	pub fn new(staff: &SsUuid<Staff>, kind: StaffPermissionKind) -> Self {
-		Self {
-			uuid: SsUuid::new(),
-			staff: staff.clone(),
-			kind,
-		}
-	}
+    pub fn new(staff: &SsUuid<Staff>, kind: StaffPermissionKind) -> Self {
+        Self {
+            uuid: SsUuid::new(),
+            staff: staff.clone(),
+            kind,
+        }
+    }
 
-	pub async fn get_belonging_to(staff: &SsUuid<Staff>) -> Result<Vec<StaffPermission>, Error> {
-		let client = surrealdb_client().await.unwrap();
-		let permissions = StaffPermission::db_search(&client, "staff", staff.uuid_string()).await?;
-		Ok(permissions)
-	}
+    pub async fn get_belonging_to(staff: &SsUuid<Staff>) -> Result<Vec<StaffPermission>, Error> {
+        let client = surrealdb_client().await.unwrap();
+        let permissions = StaffPermission::db_search(&client, "staff", staff.uuid_string()).await?;
+        Ok(permissions)
+    }
 }
