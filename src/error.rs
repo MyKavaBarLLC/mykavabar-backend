@@ -92,13 +92,13 @@ impl std::fmt::Display for Error {
 
 impl From<serde_json::error::Error> for Error {
     fn from(e: serde_json::error::Error) -> Self {
-        Error::generic_500(&format!("serde_json error: {:?}", e))
+        Error::generic_500(&format!("serde_json error: {e:?}"))
     }
 }
 
 impl From<SurrealSocketError> for Error {
     fn from(e: SurrealSocketError) -> Self {
-        Error::generic_500(&format!("SurrealSocket error: {:?}", e))
+        Error::generic_500(&format!("SurrealSocket error: {e:?}"))
     }
 }
 

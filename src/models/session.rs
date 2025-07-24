@@ -100,7 +100,7 @@ impl Session {
             exp: now + ACCESS_TOKEN_EXPIRY_SECONDS,
             iat: now,
             iss: domain.to_owned(),
-            aud: format!("{}-session", domain),
+            aud: format!("{domain}-session"),
         };
 
         let secret = env.oauth_jwt_secret.val();
@@ -111,7 +111,7 @@ impl Session {
             &claims,
             &encoding_key,
         )
-        .map_err(|e| Error::generic_500(&format!("Error encoding new JWT: {:?}", e)))
+        .map_err(|e| Error::generic_500(&format!("Error encoding new JWT: {e:?}")))
     }
 
     pub async fn user(&self) -> Result<User, Error> {

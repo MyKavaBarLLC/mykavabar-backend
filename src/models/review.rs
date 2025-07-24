@@ -31,7 +31,7 @@ impl DBRecord for Review {
 
         tokio::spawn(async move {
             if let Err(e) = Establishment::on_review_update(&self_clone).await {
-                log::error!("Establishment::on_review_update error: {}", e);
+                log::error!("Establishment::on_review_update error: {e}");
             }
         });
 
@@ -122,8 +122,7 @@ impl ReviewBody {
     pub fn validate(&self) -> Result<(), Error> {
         if self.0.len() > REVIEW_BODY_MAX_LENGTH {
             return Err(Error::bad_request(&format!(
-                "Review body must be {} characters or less.",
-                REVIEW_BODY_MAX_LENGTH
+                "Review body must be {REVIEW_BODY_MAX_LENGTH} characters or less."
             )));
         }
 

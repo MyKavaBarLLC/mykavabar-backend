@@ -51,7 +51,7 @@ pub async fn bootstrap_admin(username: String, secret_key: String) -> Result<Use
 
     let user = User::db_search_one(&client, "username", username.to_owned())
         .await?
-        .ok_or_else(|| Error::bad_request(&format!("User `{}` does not exist", username)))?;
+        .ok_or_else(|| Error::bad_request(&format!("User `{username}` does not exist")))?;
 
     user.db_update_field(&client, "is_admin", &true).await?;
     Ok(user)

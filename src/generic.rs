@@ -78,7 +78,7 @@ impl Environment {
 
     pub fn load_path(path: &str) {
         let env: Self =
-            confy::load_path(path).unwrap_or_else(|err| panic!("Failed to load {}: {}", path, err));
+            confy::load_path(path).unwrap_or_else(|err| panic!("Failed to load {path}: {err}"));
 
         let map = env.as_hashmap();
 
@@ -122,7 +122,7 @@ impl HashedString {
 
         let hash = Argon2::default()
             .hash_password(p_bytes, &salt)
-            .map_err(|e| Error::generic_500(&format!("Argon2 hash error: {:?}", e)))?;
+            .map_err(|e| Error::generic_500(&format!("Argon2 hash error: {e:?}")))?;
 
         Ok(HashedString(hash.serialize().to_string()))
     }
@@ -130,7 +130,7 @@ impl HashedString {
     /// Verify a string against the hash, returning `Ok(true)` on match, `Ok(false)` on mismatch, and `Err` on internal errors
     pub fn verify(&self, password: &str) -> Result<bool, Error> {
         let password_hash_string = PasswordHashString::new(&self.0).map_err(|e| {
-            Error::generic_500(&format!("Error creating PasswordHashString: {}", e))
+            Error::generic_500(&format!("Error creating PasswordHashString: {e}"))
         })?;
 
         let refresh_token_hash = password_hash_string.password_hash();
@@ -221,7 +221,7 @@ impl GenericResponse {
 impl From<Error> for GenericResponse {
     fn from(e: Error) -> Self {
         if let Some(internal_desc) = e.internal_desc {
-            log::error!("{}", internal_desc);
+            log::error!("{internal_desc}");
         }
 
         GenericResponse {
@@ -261,15 +261,13 @@ impl DisplayName {
 
         if self.0.len() < NAME_MIN_LENGTH {
             return Err(Error::bad_request(&format!(
-                "DisplayName must be at least {} characters long.",
-                NAME_MIN_LENGTH
+                "DisplayName must be at least {NAME_MIN_LENGTH} characters long."
             )));
         }
 
         if self.0.len() > NAME_MAX_LENGTH {
             return Err(Error::bad_request(&format!(
-                "DisplayName must be at most {} characters long.",
-                NAME_MAX_LENGTH
+                "DisplayName must be at most {NAME_MAX_LENGTH} characters long."
             )));
         }
 

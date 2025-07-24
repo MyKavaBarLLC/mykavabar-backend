@@ -80,7 +80,7 @@ impl JobFunction {
 
                 Box::pin(async move {
                     if let Err(e) = future.await {
-                        log::error!("Job function error: {}", e);
+                        log::error!("Job function error: {e}");
                     }
                 })
             }),

@@ -84,7 +84,7 @@ pub async fn start_web(bound_port: BoundPort) {
         .launch()
         .await
     {
-        log::error!("Error starting web server: {}", e);
+        log::error!("Error starting web server: {e}");
     }
 }
 

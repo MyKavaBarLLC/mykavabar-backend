@@ -146,8 +146,7 @@ impl User {
     fn verify_password_requirements(password: &str) -> Result<(), Error> {
         if password.len() < PASSWORD_MIN_LENGTH {
             return Err(Error::bad_request(&format!(
-                "Password must be at least {} characters long.",
-                PASSWORD_MIN_LENGTH
+                "Password must be at least {PASSWORD_MIN_LENGTH} characters long."
             )));
         }
 
