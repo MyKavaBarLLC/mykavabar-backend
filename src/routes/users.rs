@@ -1,6 +1,5 @@
 use crate::generic::EmailAddress;
 use crate::generic::PhoneNumber;
-use crate::models::establishment::Establishment;
 use crate::models::staff::Staff;
 use crate::models::staff_permission::StaffPermissionKind;
 use crate::routes::establishment::EstablishmentCard;
@@ -51,7 +50,7 @@ impl UserResponse {
         }
 
         Ok(Self {
-            uuid: user.uuid.uuid_string(),
+            uuid: user.uuid.to_uuid_string(),
             username: UniqueHandle::new_unchecked(user.username.to_string()),
             display_name: user.display_name,
             is_admin: user.is_admin,
@@ -76,12 +75,7 @@ impl UserResponseStaffRole {
     pub async fn from_staff(staff: Staff) -> Result<Self, Error> {
         let client = surrealdb_client().await?;
 
-        let establishment = match Establishment::db_by_id(
-            &client,
-            &staff.establishment.uuid_string(),
-        )
-        .await?
-        {
+        let establishment = match staff.establishment.db_fetch_opt(&client).await? {
             Some(establishment) => establishment,
             None => {
                 staff.db_delete(&client).await?;
@@ -175,7 +169,7 @@ async fn get_user_as_self_or_admin(id: &str, session: Session) -> Result<User, E
     if id == "me" {
         session.user().await
     } else {
-        match User::db_by_id(&surrealdb_client().await?, id).await? {
+        match User::db_get_by_id(&surrealdb_client().await?, id).await? {
             Some(target_user) => {
                 let session_user = session.user().await?;
 
@@ -303,12 +297,9 @@ pub async fn update_user(
         }
     }
 
-    user.db_update_fields(
-        &surrealdb_client().await.map_err(Into::<Error>::into)?,
-        updates,
-    )
-    .await
-    .map_err(Into::<Error>::into)?;
+    user.db_update_fields(&surrealdb_client().await.map_err(Error::from)?, updates)
+        .await
+        .map_err(Error::from)?;
 
     Ok(Json(UserResponse::from_user(user).await?))
 }
@@ -339,9 +330,9 @@ pub async fn delete_user(
     let session = bearer_token.validate().await?;
     let user = get_user_as_self_or_admin(user_id, session).await?;
 
-    user.db_delete(&surrealdb_client().await.map_err(Into::<Error>::into)?)
+    user.db_delete(&surrealdb_client().await.map_err(Error::from)?)
         .await
-        .map_err(Into::<Error>::into)?;
+        .map_err(Error::from)?;
 
     Ok(Json(GenericResponse::success()))
 }
@@ -372,9 +363,9 @@ pub async fn get_users(
         return Err(Error::insufficient_permissions().into());
     }
 
-    let users = User::db_all(&surrealdb_client().await.map_err(Into::<Error>::into)?)
+    let users = User::db_all(&surrealdb_client().await.map_err(Error::from)?)
         .await
-        .map_err(Into::<Error>::into)?;
+        .map_err(Error::from)?;
 
     let mut response = Vec::with_capacity(users.len());
 

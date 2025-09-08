@@ -60,11 +60,11 @@ pub async fn token_json(
 pub async fn token(
     token_request: TokenRequest,
 ) -> Result<Json<TokenResponse>, status::Custom<Json<GenericResponse>>> {
-    let client = surrealdb_client().await.map_err(Into::<Error>::into)?;
+    let client = surrealdb_client().await.map_err(Error::from)?;
 
     let user = User::db_search_one(&client, "username", token_request.username.clone())
         .await
-        .map_err(Into::<Error>::into)?
+        .map_err(Error::from)?
         .ok_or(Error::generic_401())?;
 
     let mut session = match token_request.grant_type.as_str() {
@@ -79,7 +79,7 @@ pub async fn token(
             session
                 .db_create(&client)
                 .await
-                .map_err(Into::<Error>::into)?;
+                .map_err(Error::from)?;
 
             session
         }

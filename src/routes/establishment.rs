@@ -47,7 +47,7 @@ pub struct EstablishmentCard {
 impl From<Establishment> for EstablishmentCard {
     fn from(establishment: Establishment) -> Self {
         Self {
-            uuid: establishment.uuid.uuid_string(),
+            uuid: establishment.uuid.to_uuid_string(),
             display_name: establishment.display_name,
             handle: UniqueHandle::new_unchecked(establishment.handle.to_string()),
             rating: establishment.rating,
@@ -74,6 +74,7 @@ pub struct EstablishmentRequest {
 /// Establishment Response
 #[derive(Serialize, ToSchema)]
 pub struct EstablishmentResponse {
+    pub uuid: String,
     pub display_name: DisplayName,
     /// Unique, mutable handle used in URLs. Must be lowercase, alphanumeric, and may include underscores.
     #[schema(value_type = String)]
@@ -96,7 +97,7 @@ impl EstablishmentResponse {
             let user = staff.get_user().await?;
 
             staff_response.push(EstablishmentStaffResponse {
-                user_uuid: user.uuid.uuid_string(),
+                user_uuid: user.uuid.to_uuid_string(),
                 display_name: user.display_name,
                 handle: user.username,
                 permissions: staff.get_permissions().await?,
@@ -117,7 +118,7 @@ impl EstablishmentResponse {
             let user = review.get_user().await?;
 
             reviews_response.push(EstablishmentReviewResponse {
-                user_uuid: user.uuid.uuid_string(),
+                user_uuid: user.uuid.to_uuid_string(),
                 display_name: user.display_name,
                 handle: user.username,
                 rating: review.rating,
@@ -126,6 +127,7 @@ impl EstablishmentResponse {
         }
 
         Ok(Self {
+            uuid: establishment.uuid.to_uuid_string(),
             display_name: establishment.display_name,
             handle: UniqueHandle::new_unchecked(establishment.handle.to_string()),
             schedule: establishment.schedule,
@@ -190,12 +192,12 @@ pub async fn create_establishment(
     }
 
     let new_establishment = Establishment::try_from_request(request.0).await?;
-    let client = surrealdb_client().await.map_err(Into::<Error>::into)?;
+    let client = surrealdb_client().await.map_err(Error::from)?;
 
     new_establishment
         .db_create(&client)
         .await
-        .map_err(Into::<Error>::into)?;
+        .map_err(Error::from)?;
 
     Ok(Json(
         EstablishmentResponse::from_establishment(new_establishment).await?,
@@ -255,17 +257,14 @@ pub async fn update_establishment(
     establishment_id: &str,
     bearer_token: BearerToken,
 ) -> Result<Json<EstablishmentResponse>, status::Custom<Json<GenericResponse>>> {
-    let establishment_id = SsUuid::from_str(establishment_id).map_err(Into::<Error>::into)?;
+    let establishment_id = SsUuid::from_str(establishment_id).map_err(Error::from)?;
     let request_user = bearer_token.validate().await?.user().await?;
-    let client = surrealdb_client().await.map_err(Into::<Error>::into)?;
+    let client = surrealdb_client().await.map_err(Error::from)?;
 
-    let mut establishment = match Establishment::db_by_id(&client, &establishment_id.uuid_string())
+    let mut establishment = establishment_id
+        .db_fetch(&client)
         .await
-        .map_err(Into::<Error>::into)?
-    {
-        Some(establishment) => establishment,
-        None => return Err(Error::not_found("Establishment not found").into()),
-    };
+        .map_err(Error::from)?;
 
     let mut allowed = false;
 
@@ -307,7 +306,7 @@ pub async fn update_establishment(
     establishment
         .db_overwrite(&client)
         .await
-        .map_err(Into::<Error>::into)?;
+        .map_err(Error::from)?;
 
     Ok(Json(
         EstablishmentResponse::from_establishment(establishment).await?,
@@ -454,9 +453,9 @@ pub async fn delete_establishment(
     establishment_id: &str,
     bearer_token: BearerToken,
 ) -> Result<Json<EstablishmentResponse>, status::Custom<Json<GenericResponse>>> {
-    let establishment_id = SsUuid::from_str(establishment_id).map_err(Into::<Error>::into)?;
+    let establishment_id = SsUuid::from_str(establishment_id).map_err(Error::from)?;
     let request_user = bearer_token.validate().await?.user().await?;
-    let client = surrealdb_client().await.map_err(Into::<Error>::into)?;
+    let client = surrealdb_client().await.map_err(Error::from)?;
     let mut allowed = false;
 
     if request_user.is_admin {
@@ -471,22 +470,19 @@ pub async fn delete_establishment(
         return Err(Error::forbidden().into());
     }
 
-    match Establishment::db_by_id(&client, &establishment_id.uuid_string())
+    let establishment = establishment_id
+        .db_fetch(&client)
         .await
-        .map_err(Into::<Error>::into)?
-    {
-        Some(establishment) => {
-            establishment
-                .db_delete(&client)
-                .await
-                .map_err(Into::<Error>::into)?;
+        .map_err(Error::from)?;
 
-            Ok(Json(
-                EstablishmentResponse::from_establishment(establishment).await?,
-            ))
-        }
-        None => Err(Error::not_found("Establishment not found").into()),
-    }
+    establishment
+        .db_delete(&client)
+        .await
+        .map_err(Error::from)?;
+
+    Ok(Json(
+        EstablishmentResponse::from_establishment(establishment).await?,
+    ))
 }
 
 /// Establishment Staff Update Request
@@ -526,17 +522,14 @@ pub async fn update_establishment_staff(
     user_id: &str,
     bearer_token: BearerToken,
 ) -> Result<Json<EstablishmentStaffResponse>, status::Custom<Json<GenericResponse>>> {
-    let establishment_id = SsUuid::from_str(establishment_id).map_err(Into::<Error>::into)?;
+    let establishment_id = SsUuid::from_str(establishment_id).map_err(Error::from)?;
     let request_user = bearer_token.validate().await?.user().await?;
-    let client = surrealdb_client().await.map_err(Into::<Error>::into)?;
+    let client = surrealdb_client().await.map_err(Error::from)?;
 
-    let establishment = match Establishment::db_by_id(&client, &establishment_id.uuid_string())
+    let establishment = establishment_id
+        .db_fetch(&client)
         .await
-        .map_err(Into::<Error>::into)?
-    {
-        Some(establishment) => establishment,
-        None => return Err(Error::not_found("Establishment not found").into()),
-    };
+        .map_err(Error::from)?;
 
     let mut allowed = false;
 
@@ -564,7 +557,7 @@ pub async fn update_establishment_staff(
         .await?;
 
     Ok(Json(EstablishmentStaffResponse {
-        user_uuid: staff_user.uuid.uuid_string(),
+        user_uuid: staff_user.uuid.to_uuid_string(),
         display_name: staff_user.display_name,
         handle: staff_user.username,
         permissions: staff.get_permissions().await?,
@@ -597,17 +590,14 @@ pub async fn delete_establishment_staff(
     user_id: &str,
     bearer_token: BearerToken,
 ) -> Result<Json<EstablishmentStaffResponse>, status::Custom<Json<GenericResponse>>> {
-    let establishment_id = SsUuid::from_str(establishment_id).map_err(Into::<Error>::into)?;
+    let establishment_id = SsUuid::from_str(establishment_id).map_err(Error::from)?;
     let request_user = bearer_token.validate().await?.user().await?;
-    let client = surrealdb_client().await.map_err(Into::<Error>::into)?;
+    let client = surrealdb_client().await.map_err(Error::from)?;
 
-    let establishment = match Establishment::db_by_id(&client, &establishment_id.uuid_string())
+    let establishment = establishment_id
+        .db_fetch(&client)
         .await
-        .map_err(Into::<Error>::into)?
-    {
-        Some(establishment) => establishment,
-        None => return Err(Error::not_found("Establishment not found").into()),
-    };
+        .map_err(Error::from)?;
 
     let mut allowed = false;
 
@@ -631,17 +621,14 @@ pub async fn delete_establishment_staff(
     let staff_user = staff.get_user().await?;
 
     let response = EstablishmentStaffResponse {
-        user_uuid: staff_user.uuid.uuid_string(),
+        user_uuid: staff_user.uuid.to_uuid_string(),
         display_name: staff_user.display_name,
         handle: staff_user.username,
         permissions: staff.get_permissions().await?,
         working_until: staff.working_until().await?,
     };
 
-    staff
-        .db_delete(&client)
-        .await
-        .map_err(Into::<Error>::into)?;
+    staff.db_delete(&client).await.map_err(Error::from)?;
 
     Ok(Json(response))
 }
@@ -677,17 +664,14 @@ pub async fn add_establishment_review(
     establishment_id: &str,
     bearer_token: BearerToken,
 ) -> Result<Json<ReviewDto>, status::Custom<Json<GenericResponse>>> {
-    let establishment_id = SsUuid::from_str(establishment_id).map_err(Into::<Error>::into)?;
+    let establishment_id = SsUuid::from_str(establishment_id).map_err(Error::from)?;
     let request_user = bearer_token.validate().await?.user().await?;
-    let client = surrealdb_client().await.map_err(Into::<Error>::into)?;
+    let client = surrealdb_client().await.map_err(Error::from)?;
 
-    let establishment = match Establishment::db_by_id(&client, &establishment_id.uuid_string())
+    let establishment = establishment_id
+        .db_fetch(&client)
         .await
-        .map_err(Into::<Error>::into)?
-    {
-        Some(establishment) => establishment,
-        None => return Err(Error::not_found("Establishment not found").into()),
-    };
+        .map_err(Error::from)?;
 
     if request_user.staff_at(&establishment_id).await?.is_some() {
         return Err(Error::new(
@@ -698,9 +682,9 @@ pub async fn add_establishment_review(
         .into());
     }
 
-    let user_reviews = Review::db_search(&client, "user", request_user.uuid.uuid_string())
+    let user_reviews = Review::db_search(&client, "user", request_user.uuid.to_uuid_string())
         .await
-        .map_err(Into::<Error>::into)?;
+        .map_err(Error::from)?;
 
     for review in user_reviews {
         if let ReviewContext::EstablishmentReview(establishment_review_id) = review.context {
@@ -721,10 +705,7 @@ pub async fn add_establishment_review(
 
     review.validate()?;
 
-    review
-        .db_create(&client)
-        .await
-        .map_err(Into::<Error>::into)?;
+    review.db_create(&client).await.map_err(Error::from)?;
 
     Ok(request)
 }
@@ -754,13 +735,13 @@ pub async fn update_establishment_review(
     establishment_id: &str,
     bearer_token: BearerToken,
 ) -> Result<Json<ReviewDto>, status::Custom<Json<GenericResponse>>> {
-    let establishment_id = SsUuid::from_str(establishment_id).map_err(Into::<Error>::into)?;
+    let establishment_id = SsUuid::from_str(establishment_id).map_err(Error::from)?;
     let request_user = bearer_token.validate().await?.user().await?;
-    let client = surrealdb_client().await.map_err(Into::<Error>::into)?;
+    let client = surrealdb_client().await.map_err(Error::from)?;
 
-    let user_reviews = Review::db_search(&client, "user", request_user.uuid.uuid_string())
+    let user_reviews = Review::db_search(&client, "user", request_user.uuid.to_uuid_string())
         .await
-        .map_err(Into::<Error>::into)?;
+        .map_err(Error::from)?;
 
     for review in user_reviews {
         if let ReviewContext::EstablishmentReview(establishment_review_id) = &review.context {
@@ -770,10 +751,7 @@ pub async fn update_establishment_review(
                 review.body = request.body.clone();
                 review.validate()?;
 
-                review
-                    .db_overwrite(&client)
-                    .await
-                    .map_err(Into::<Error>::into)?;
+                review.db_overwrite(&client).await.map_err(Error::from)?;
 
                 return Ok(request);
             }
@@ -806,13 +784,13 @@ pub async fn delete_establishment_review(
     establishment_id: &str,
     bearer_token: BearerToken,
 ) -> Result<Json<ReviewDto>, status::Custom<Json<GenericResponse>>> {
-    let establishment_id = SsUuid::from_str(establishment_id).map_err(Into::<Error>::into)?;
+    let establishment_id = SsUuid::from_str(establishment_id).map_err(Error::from)?;
     let request_user = bearer_token.validate().await?.user().await?;
-    let client = surrealdb_client().await.map_err(Into::<Error>::into)?;
+    let client = surrealdb_client().await.map_err(Error::from)?;
 
-    let user_reviews = Review::db_search(&client, "user", request_user.uuid.uuid_string())
+    let user_reviews = Review::db_search(&client, "user", request_user.uuid.to_uuid_string())
         .await
-        .map_err(Into::<Error>::into)?;
+        .map_err(Error::from)?;
 
     for review in user_reviews {
         if let ReviewContext::EstablishmentReview(establishment_review_id) = &review.context {
@@ -822,10 +800,7 @@ pub async fn delete_establishment_review(
                     body: review.body.clone(),
                 };
 
-                review
-                    .db_delete(&client)
-                    .await
-                    .map_err(Into::<Error>::into)?;
+                review.db_delete(&client).await.map_err(Error::from)?;
 
                 return Ok(Json(response));
             }
@@ -877,7 +852,7 @@ pub async fn check_in(
     bearer_token: BearerToken,
 ) -> Result<Json<GenericResponse>, status::Custom<Json<GenericResponse>>> {
     let establishment_id: SsUuid<Establishment> =
-        SsUuid::from_str(establishment_id).map_err(Into::<Error>::into)?;
+        SsUuid::from_str(establishment_id).map_err(Error::from)?;
 
     let requester = bearer_token.validate().await?.user().await?;
 
@@ -892,11 +867,11 @@ pub async fn check_in(
             );
         }
 
-        let client = surrealdb_client().await.map_err(Into::<Error>::into)?;
+        let client = surrealdb_client().await.map_err(Error::from)?;
 
-        User::db_by_id(&client, user_id)
+        User::db_get_by_id(&client, user_id)
             .await
-            .map_err(Into::<Error>::into)?
+            .map_err(Error::from)?
             .ok_or_else(|| Error::not_found("User not found"))?
     } else {
         requester
@@ -945,7 +920,7 @@ pub async fn check_out(
     bearer_token: BearerToken,
 ) -> Result<Json<GenericResponse>, status::Custom<Json<GenericResponse>>> {
     let establishment_id: SsUuid<Establishment> =
-        SsUuid::from_str(establishment_id).map_err(Into::<Error>::into)?;
+        SsUuid::from_str(establishment_id).map_err(Error::from)?;
 
     let requester = bearer_token.validate().await?.user().await?;
 
@@ -960,11 +935,11 @@ pub async fn check_out(
             );
         }
 
-        let client = surrealdb_client().await.map_err(Into::<Error>::into)?;
+        let client = surrealdb_client().await.map_err(Error::from)?;
 
-        User::db_by_id(&client, user_id)
+        User::db_get_by_id(&client, user_id)
             .await
-            .map_err(Into::<Error>::into)?
+            .map_err(Error::from)?
             .ok_or_else(|| Error::not_found("User not found"))?
     } else {
         requester

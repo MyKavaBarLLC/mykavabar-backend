@@ -54,9 +54,10 @@ impl Session {
                 .map_err(|_| Error::generic_401())?;
         // note: decode() also checks expiration
 
-        let session: Session = Self::db_by_id(&surrealdb_client().await?, &token_data.claims.sub)
-            .await?
-            .ok_or(Error::generic_401())?;
+        let session: Session =
+            Self::db_get_by_id(&surrealdb_client().await?, &token_data.claims.sub)
+                .await?
+                .ok_or(Error::generic_401())?;
 
         Ok(session)
     }
@@ -96,7 +97,7 @@ impl Session {
         let domain = env.domain.val();
 
         let claims = JwtClaims {
-            sub: self.uuid.uuid_string(),
+            sub: self.uuid.to_uuid_string(),
             exp: now + ACCESS_TOKEN_EXPIRY_SECONDS,
             iat: now,
             iss: domain.to_owned(),
@@ -116,7 +117,7 @@ impl Session {
 
     pub async fn user(&self) -> Result<User, Error> {
         self.user
-            .object_opt(&surrealdb_client().await?)
+            .db_fetch_opt(&surrealdb_client().await?)
             .await?
             .ok_or_else(|| Error::new(Status::Unauthorized, "Session user not found", None))
     }

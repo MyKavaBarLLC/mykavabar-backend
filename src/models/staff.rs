@@ -110,7 +110,7 @@ impl Staff {
     pub async fn get_user(&self) -> Result<User, Error> {
         let client = surrealdb_client().await?;
 
-        match User::db_by_id(&client, &self.user.uuid_string()).await? {
+        match self.user.db_fetch_opt(&client).await? {
             Some(user) => Ok(user),
             None => {
                 self.db_delete(&client).await?;

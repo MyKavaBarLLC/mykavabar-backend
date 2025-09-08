@@ -130,7 +130,7 @@ impl Establishment {
 
     pub async fn get_staff_by_user_id(&self, user_id: &str) -> Result<Option<Staff>, Error> {
         for staff in self.get_staff().await? {
-            if staff.user.uuid_string() == user_id {
+            if staff.user.to_uuid_string() == user_id {
                 return Ok(Some(staff));
             }
         }
@@ -140,7 +140,8 @@ impl Establishment {
 
     pub async fn calculate_rating(&self) -> Result<EstablishmentRating, Error> {
         let client = surrealdb_client().await?;
-        let reviews = Review::db_search(&client, "establishment", self.uuid.uuid_string()).await?;
+        let reviews =
+            Review::db_search(&client, "establishment", self.uuid.to_uuid_string()).await?;
 
         if reviews.is_empty() {
             return EstablishmentRating::new(0);
@@ -164,12 +165,7 @@ impl Establishment {
             _ => return Ok(()),
         };
 
-        let establishment =
-            match Establishment::db_by_id(&client, &establishment_uuid.uuid_string()).await? {
-                Some(establishment) => establishment,
-                None => return Err(Error::not_found("Establishment not found")),
-            };
-
+        let establishment = establishment_uuid.db_fetch(&client).await?;
         let rating: EstablishmentRating = establishment.calculate_rating().await?;
 
         establishment

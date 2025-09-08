@@ -37,7 +37,10 @@ impl StaffPermission {
 
     pub async fn get_belonging_to(staff: &SsUuid<Staff>) -> Result<Vec<StaffPermission>, Error> {
         let client = surrealdb_client().await.unwrap();
-        let permissions = StaffPermission::db_search(&client, "staff", staff.uuid_string()).await?;
+        
+        let permissions =
+            StaffPermission::db_search(&client, "staff", staff.to_uuid_string()).await?;
+
         Ok(permissions)
     }
 }

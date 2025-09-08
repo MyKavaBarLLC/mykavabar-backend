@@ -74,11 +74,7 @@ impl Review {
 
     pub async fn get_user(&self) -> Result<User, Error> {
         let client = surrealdb_client().await?;
-
-        match User::db_by_id(&client, &self.user.uuid_string()).await? {
-            Some(user) => Ok(user),
-            None => Err(Error::not_found("User not found.")),
-        }
+        self.user.db_fetch(&client).await.map_err(Error::from)
     }
 }
 
