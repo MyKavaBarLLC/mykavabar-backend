@@ -107,8 +107,8 @@ impl EstablishmentResponse {
 
         let reviews = Review::db_search(
             &surrealdb_client().await?,
-            "establishment",
-            establishment.uuid.to_string(),
+            "context",
+            ReviewContext::EstablishmentReview(establishment.uuid.clone()),
         )
         .await?;
 
@@ -500,7 +500,7 @@ pub struct EstablishmentStaffUpdateRequest {
         ("establishment_id" = String, Path, description = "Establishment ID"),
         ("user_id" = String, Path, description = "Staff User ID")
     ),
-    description = "Update an Establishment's staff permissions if the User is a Staff with sufficient permissions (or is an admin)",
+    description = "Update an Establishment's Staff's permissions if the requesting User is a Staff with sufficient permissions (or is an admin)",
     request_body(content = EstablishmentStaffUpdateRequest, content_type = "application/json"),
     responses(
         (status = 200, description = "Updated Establishment Staff", body = EstablishmentStaffResponse),
