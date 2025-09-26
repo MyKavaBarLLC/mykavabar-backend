@@ -10,6 +10,7 @@ use crate::models::review::Review;
 use crate::models::review::ReviewBody;
 use crate::models::review::ReviewContext;
 use crate::models::review::ReviewRating;
+use crate::models::staff::Staff;
 use crate::models::staff_permission::StaffPermissionKind;
 use crate::models::user::User;
 use crate::routes::openapi::DummySuccess;
@@ -563,6 +564,81 @@ pub async fn update_establishment_staff(
         permissions: staff.get_permissions().await?,
         working_until: staff.working_until().await?,
     }))
+}
+
+/// Add Staff
+#[utoipa::path(
+    put,
+    path = "/v1/establishments/{establishment_id}/staff/{user_id}",
+    params(
+        ("establishment_id" = String, Path, description = "Establishment ID"),
+        ("user_id" = String, Path, description = "Staff User ID")
+    ),
+    description = "Add a User as Staff to an Establishment if the requesting User is a Staff with sufficient permissions (or is an admin)",
+    responses(
+        (status = 200, description = "Updated Establishment", body = EstablishmentResponse),
+        (status = 401, description = "Unauthorized", body = GenericResponse),
+        (status = 403, description = "Forbidden", body = GenericResponse)
+    ),
+    security(
+        ("bearerAuth" = [])
+    ),
+    tag = "establishment"
+)]
+#[rocket::put("/v1/establishments/<establishment_id>/staff/<user_id>")]
+pub async fn add_establishment_staff(
+    establishment_id: &str,
+    user_id: &str,
+    bearer_token: BearerToken,
+) -> Result<Json<EstablishmentResponse>, status::Custom<Json<GenericResponse>>> {
+    let establishment_id = SsUuid::from_str(establishment_id).map_err(Error::from)?;
+    let request_user = bearer_token.validate().await?.user().await?;
+    let client = surrealdb_client().await.map_err(Error::from)?;
+
+    let establishment: Establishment = establishment_id
+        .db_fetch(&client)
+        .await
+        .map_err(Error::from)?;
+
+    let mut allowed = false;
+
+    if request_user.is_admin {
+        allowed = true;
+    } else if let Some(staff) = request_user.staff_at(&establishment_id).await? {
+        if staff.has_permission(StaffPermissionKind::Admin).await? {
+            allowed = true;
+        }
+    }
+
+    if !allowed {
+        return Err(Error::forbidden().into());
+    }
+
+    let establishment_staff = Staff::db_search(
+        &client,
+        "establishment",
+        establishment.uuid.to_uuid_string(),
+    )
+    .await
+    .map_err(Error::from)?;
+
+    for staff in establishment_staff {
+        if staff.user.to_uuid_string() == user_id {
+            return Err(Error::bad_request("User is already Staff at this Establishment").into());
+        }
+    }
+
+    Staff::new(
+        &SsUuid::from_str(user_id).map_err(Error::from)?,
+        &establishment.uuid,
+    )
+    .db_create(&client)
+    .await
+    .map_err(Error::from)?;
+
+    Ok(Json(
+        EstablishmentResponse::from_establishment(establishment).await?,
+    ))
 }
 
 /// Delete Staff

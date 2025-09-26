@@ -62,6 +62,14 @@ impl DBRecord for Staff {
 }
 
 impl Staff {
+    pub fn new(user: &SsUuid<User>, establishment: &SsUuid<Establishment>) -> Self {
+        Self {
+            uuid: SsUuid::new(),
+            user: user.to_owned(),
+            establishment: establishment.to_owned(),
+        }
+    }
+
     pub async fn get_permissions(&self) -> Result<Vec<StaffPermissionKind>, Error> {
         let client = surrealdb_client().await?;
 
