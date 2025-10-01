@@ -104,7 +104,7 @@ impl UserResponseStaffRole {
         ("user_id" = String, Path, description = "User ID")
     ),
     responses(
-        (status = 200, description = "User fetched", body = DummySuccess),
+        (status = 200, description = "User fetched", body = UserResponse),
         (status = 401, description = "Unauthorized", body = GenericResponse),
         (status = 403, description = "Forbidden", body = GenericResponse)
     ),

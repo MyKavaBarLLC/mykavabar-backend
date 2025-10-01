@@ -2,10 +2,15 @@ use crate::generic::DisplayName;
 use crate::generic::GenericResponse;
 use crate::generic::HasHandle;
 use crate::generic::UniqueHandle;
+use crate::models::establishment::Coordinate;
+use crate::models::establishment::EstablishmentRating;
+use crate::models::establishment::Schedule;
+use crate::models::event::EventResponse;
 use crate::routes::bootstrap_admin::BootstrapAdminRequest;
 use crate::routes::bootstrap_admin::__path_bootstrap_admin_route;
 use crate::routes::check_token::__path_check_token;
 use crate::routes::establishment::*;
+use crate::routes::events::*;
 use crate::routes::token::__path_token_json;
 use crate::routes::token::{TokenRequest, TokenResponse};
 use crate::routes::users::*;
@@ -26,11 +31,12 @@ use utoipa_rapidoc::RapiDoc;
         title = "MyKavaBar API",
         description = "https://github.com/MyKavaBarLLC/mykavabar-backend"
     ),
-    paths(token_json, register, change_password, update_user, delete_user, get_user, get_users, bootstrap_admin_route, check_token, get_establishment, create_establishment, search_establishments_route, update_establishment, delete_establishment, update_establishment_staff, delete_establishment_staff, add_establishment_staff, add_establishment_review, update_establishment_review, delete_establishment_review, check_in, check_out),
-    components(schemas(DisplayName, UniqueHandle<HandleDummy>, TokenRequest, TokenResponse, GenericResponse, RegistrationRequest, ChangePasswordRequest, UserRequest, UserResponse, BootstrapAdminRequest, EstablishmentSearchRequest, EstablishmentCard, EstablishmentRequest, DummySuccess, ReviewDto)),
+    paths(token_json, register, change_password, update_user, delete_user, get_user, get_users, bootstrap_admin_route, check_token, get_establishment, create_establishment, search_establishments_route, update_establishment, delete_establishment, update_establishment_staff, delete_establishment_staff, add_establishment_staff, add_establishment_review, update_establishment_review, delete_establishment_review, check_in, check_out, create_event, get_events, update_event, delete_event, get_upcoming_events),
+    components(schemas(DisplayName, UniqueHandle<HandleDummy>, TokenRequest, TokenResponse, GenericResponse, RegistrationRequest, ChangePasswordRequest, UserRequest, UserResponse, BootstrapAdminRequest, EstablishmentSearchRequest, EstablishmentCard, EstablishmentRequest, DummySuccess, ReviewDto, Coordinate, Schedule, EstablishmentRating, EventRequest, EventResponse)),
     tags((name = "auth", description = "OAuth 2.0 Authentication"),
-        (name = "user", description = "User management endpoints. Use `me` in place of user ID to refer to the authenticated user"),
-        (name = "establishment", description = "Establishment management endpoints")
+        (name = "user", description = "User endpoints. Use `me` in place of user ID to refer to the authenticated user"),
+        (name = "establishment", description = "Establishment endpoints"),
+        (name = "event", description = "Event endpoints"),
     ),
     security(
         ("bearerAuth" = [])

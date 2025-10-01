@@ -73,6 +73,12 @@ pub async fn start_web(bound_port: BoundPort) {
                 routes::establishment::add_establishment_staff,
                 routes::establishment::check_in,
                 routes::establishment::check_out,
+                routes::establishment::create_event,
+                routes::establishment::get_events,
+                routes::establishment::update_event,
+                routes::establishment::delete_event,
+                // Events
+                routes::events::get_upcoming_events,
             ],
         )
         .register(

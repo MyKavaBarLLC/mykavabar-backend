@@ -6,6 +6,9 @@ use crate::models::establishment::Coordinate;
 use crate::models::establishment::Establishment;
 use crate::models::establishment::EstablishmentRating;
 use crate::models::establishment::Schedule;
+use crate::models::event::Event;
+use crate::models::event::EventResponse;
+use crate::models::event::EventSchedule;
 use crate::models::review::Review;
 use crate::models::review::ReviewBody;
 use crate::models::review::ReviewContext;
@@ -1028,4 +1031,240 @@ pub async fn check_out(
 
     staff.check_out(request.time).await?;
     Ok(Json(GenericResponse::success()))
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct EventRequest {
+    pub title: String,
+    pub description: Option<String>,
+    pub schedule: EventSchedule,
+}
+
+/// Create Event
+#[utoipa::path(
+    post,
+    path = "/v1/establishments/{establishment_id}/events",
+    params(
+        ("establishment_id" = String, Path, description = "Establishment ID"),
+    ),
+    description = "Create an Event at the Establishment if the requesting User is a Staff with sufficient permissions (or is an admin)",
+    request_body(content = EventRequest, content_type = "application/json"),
+    responses(
+        (status = 200, description = "Created Event", body = EventResponse),
+        (status = 401, description = "Unauthorized", body = GenericResponse),
+        (status = 403, description = "Forbidden", body = GenericResponse)
+    ),
+    security(
+        ("bearerAuth" = [])
+    ),
+    tag = "establishment"
+)]
+#[rocket::post("/v1/establishments/<establishment_id>/events", data = "<request>")]
+pub async fn create_event(
+    request: Json<EventRequest>,
+    establishment_id: &str,
+    bearer_token: BearerToken,
+) -> Result<Json<EventResponse>, status::Custom<Json<GenericResponse>>> {
+    let establishment_id = SsUuid::from_str(establishment_id).map_err(Error::from)?;
+    let request_user = bearer_token.validate().await?.user().await?;
+    let client = surrealdb_client().await.map_err(Error::from)?;
+
+    let establishment = establishment_id
+        .db_fetch(&client)
+        .await
+        .map_err(Error::from)?;
+
+    let mut allowed = false;
+
+    if request_user.is_admin {
+        allowed = true;
+    } else if let Some(staff) = request_user.staff_at(&establishment_id).await? {
+        if staff.has_permission(StaffPermissionKind::Admin).await? {
+            allowed = true;
+        }
+    }
+
+    if !allowed {
+        return Err(Error::forbidden().into());
+    }
+
+    let new_event = Event {
+        uuid: SsUuid::new(),
+        host: establishment.uuid.clone(),
+        title: request.title.clone(),
+        description: request.description.clone(),
+        schedule: request.schedule.clone(),
+        attendees: vec![],
+    };
+
+    new_event.db_create(&client).await.map_err(Error::from)?;
+    let event_response: EventResponse = new_event.into();
+    Ok(Json(event_response))
+}
+
+/// Get Events
+#[utoipa::path(
+    get,
+    path = "/v1/establishments/{establishment_id}/events",
+    params(
+        ("establishment_id" = String, Path, description = "Establishment ID"),
+    ),
+    description = "Get all Events at the Establishment",
+    responses(
+        (status = 200, description = "List of Events", body = [EventResponse]),
+        (status = 401, description = "Unauthorized", body = GenericResponse),
+        (status = 403, description = "Forbidden", body = GenericResponse)
+    ),
+    security(),
+    tag = "establishment"
+)]
+#[rocket::get("/v1/establishments/<establishment_id>/events")]
+pub async fn get_events(
+    establishment_id: &str,
+) -> Result<Json<Vec<EventResponse>>, status::Custom<Json<GenericResponse>>> {
+    let establishment_id: SsUuid<Establishment> =
+        SsUuid::from_str(establishment_id).map_err(Error::from)?;
+
+    let client = surrealdb_client().await.map_err(Error::from)?;
+
+    let establishment = establishment_id
+        .db_fetch(&client)
+        .await
+        .map_err(Error::from)?;
+
+    let events = Event::db_search(&client, "host", establishment.uuid.to_uuid_string())
+        .await
+        .map_err(Error::from)?;
+
+    let event_responses: Vec<EventResponse> = events.into_iter().map(|e| e.into()).collect();
+    Ok(Json(event_responses))
+}
+
+/// Update Event
+#[utoipa::path(
+    patch,
+    path = "/v1/establishments/{establishment_id}/events/{event_id}",
+    params(
+        ("establishment_id" = String, Path, description = "Establishment ID"),
+        ("event_id" = String, Path, description = "Event ID")
+    ),
+    description = "Update an Event at the Establishment if the requesting User is a Staff with sufficient permissions (or is an admin)",
+    request_body(content = EventRequest, content_type = "application/json"),
+    responses(
+        (status = 200, description = "Updated Event", body = EventResponse),
+        (status = 401, description = "Unauthorized", body = GenericResponse),
+        (status = 403, description = "Forbidden", body = GenericResponse)
+    ),
+    security(
+        ("bearerAuth" = [])
+    ),
+    tag = "establishment"
+)]
+#[rocket::patch(
+    "/v1/establishments/<establishment_id>/events/<event_id>",
+    data = "<request>"
+)]
+pub async fn update_event(
+    request: Json<EventRequest>,
+    establishment_id: &str,
+    event_id: &str,
+    bearer_token: BearerToken,
+) -> Result<Json<EventResponse>, status::Custom<Json<GenericResponse>>> {
+    let establishment_id = SsUuid::from_str(establishment_id).map_err(Error::from)?;
+    let event_id: SsUuid<Event> = SsUuid::from_str(event_id).map_err(Error::from)?;
+    let request_user = bearer_token.validate().await?.user().await?;
+    let client = surrealdb_client().await.map_err(Error::from)?;
+
+    let establishment = establishment_id
+        .db_fetch(&client)
+        .await
+        .map_err(Error::from)?;
+
+    let mut allowed = false;
+
+    if request_user.is_admin {
+        allowed = true;
+    } else if let Some(staff) = request_user.staff_at(&establishment_id).await? {
+        if staff.has_permission(StaffPermissionKind::Admin).await? {
+            allowed = true;
+        }
+    }
+
+    if !allowed {
+        return Err(Error::forbidden().into());
+    }
+
+    let mut event = event_id.db_fetch(&client).await.map_err(Error::from)?;
+
+    if event.host != establishment.uuid {
+        return Err(Error::bad_request("Event does not belong to this Establishment").into());
+    }
+
+    event.title = request.title.clone();
+    event.description = request.description.clone();
+    event.schedule = request.schedule.clone();
+
+    event.db_overwrite(&client).await.map_err(Error::from)?;
+    let event_response: EventResponse = event.into();
+    Ok(Json(event_response))
+}
+
+/// Delete Event
+#[utoipa::path(
+    delete,
+    path = "/v1/establishments/{establishment_id}/events/{event_id}",
+    params(
+        ("establishment_id" = String, Path, description = "Establishment ID"),
+        ("event_id" = String, Path, description = "Event ID")
+    ),
+    description = "Delete an Event at the Establishment if the requesting User is a Staff with sufficient permissions (or is an admin)",
+    responses(
+        (status = 200, description = "Deleted Event", body = EventResponse),
+        (status = 401, description = "Unauthorized", body = GenericResponse),
+        (status = 403, description = "Forbidden", body = GenericResponse)
+    ),
+    security(
+        ("bearerAuth" = [])
+    ),
+    tag = "establishment"
+)]
+#[rocket::delete("/v1/establishments/<establishment_id>/events/<event_id>")]
+pub async fn delete_event(
+    establishment_id: &str,
+    event_id: &str,
+    bearer_token: BearerToken,
+) -> Result<Json<EventResponse>, status::Custom<Json<GenericResponse>>> {
+    let establishment_id = SsUuid::from_str(establishment_id).map_err(Error::from)?;
+    let event_id: SsUuid<Event> = SsUuid::from_str(event_id).map_err(Error::from)?;
+    let request_user = bearer_token.validate().await?.user().await?;
+    let client = surrealdb_client().await.map_err(Error::from)?;
+
+    let establishment = establishment_id
+        .db_fetch(&client)
+        .await
+        .map_err(Error::from)?;
+
+    let mut allowed = false;
+
+    if request_user.is_admin {
+        allowed = true;
+    } else if let Some(staff) = request_user.staff_at(&establishment_id).await? {
+        if staff.has_permission(StaffPermissionKind::Admin).await? {
+            allowed = true;
+        }
+    }
+
+    if !allowed {
+        return Err(Error::forbidden().into());
+    }
+
+    let event = event_id.db_fetch(&client).await.map_err(Error::from)?;
+
+    if event.host != establishment.uuid {
+        return Err(Error::bad_request("Event does not belong to this Establishment").into());
+    }
+
+    event.db_delete(&client).await.map_err(Error::from)?;
+    let event_response: EventResponse = event.into();
+    Ok(Json(event_response))
 }

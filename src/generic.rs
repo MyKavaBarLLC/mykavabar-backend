@@ -129,9 +129,8 @@ impl HashedString {
 
     /// Verify a string against the hash, returning `Ok(true)` on match, `Ok(false)` on mismatch, and `Err` on internal errors
     pub fn verify(&self, password: &str) -> Result<bool, Error> {
-        let password_hash_string = PasswordHashString::new(&self.0).map_err(|e| {
-            Error::generic_500(&format!("Error creating PasswordHashString: {e}"))
-        })?;
+        let password_hash_string = PasswordHashString::new(&self.0)
+            .map_err(|e| Error::generic_500(&format!("Error creating PasswordHashString: {e}")))?;
 
         let refresh_token_hash = password_hash_string.password_hash();
 
@@ -454,4 +453,16 @@ impl EmailAddress {
 
         Ok(())
     }
+}
+
+#[derive(Serialize, Deserialize, Clone, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum Weekday {
+    Sunday,
+    Monday,
+    Tuesday,
+    Wednesday,
+    Thursday,
+    Friday,
+    Saturday,
 }

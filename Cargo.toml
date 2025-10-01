@@ -26,7 +26,7 @@ reqwest = { version = "0.12.15", features = ["json"] }
 strum = { version = "0.27.1", features = ["derive"] }
 surreal_socket = { path = "../surrealsocket" }
 rustyline = "15.0.0"
-utoipa = "5.3.1"
+utoipa = { version = "5.3.1", features = ["chrono"] }
 utoipa-rapidoc = "6.0.0"
 futures = "0.3.31"
 subtle = "2.6"

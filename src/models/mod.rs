@@ -1,4 +1,5 @@
 pub mod establishment;
+pub mod event;
 pub mod image;
 pub mod review;
 pub mod session;
