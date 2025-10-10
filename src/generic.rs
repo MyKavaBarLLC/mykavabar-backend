@@ -172,7 +172,7 @@ impl<'r> FromRequest<'r> for BearerToken {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 /// [JWT Claims](https://datatracker.ietf.org/doc/html/rfc7519)
 pub struct JwtClaims {
     /// Subject
